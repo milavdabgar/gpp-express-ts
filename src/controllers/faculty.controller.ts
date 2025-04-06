@@ -247,11 +247,30 @@ export const updateFaculty = catchAsync(async (req: Request, res: Response) => {
 
 // Delete faculty
 export const deleteFaculty = catchAsync(async (req: Request, res: Response) => {
-  const faculty = await FacultyModel.findByIdAndDelete(req.params.id);
+  // First find the faculty to get user ID
+  const faculty = await FacultyModel.findById(req.params.id);
 
   if (!faculty) {
     throw new AppError('No faculty found with that ID', 404);
   }
+
+  // Get the associated user
+  const user = await UserModel.findById(faculty.userId);
+
+  if (user) {
+    // If user only has faculty role, delete the user
+    if (user.roles.length === 1 && user.roles.includes('faculty')) {
+      await UserModel.findByIdAndDelete(user._id);
+    } else {
+      // If user has other roles, just remove faculty role
+      await UserModel.findByIdAndUpdate(user._id, {
+        $pull: { roles: 'faculty' }
+      });
+    }
+  }
+
+  // Delete the faculty record
+  await FacultyModel.findByIdAndDelete(req.params.id);
 
   res.status(204).json({
     status: 'success',
