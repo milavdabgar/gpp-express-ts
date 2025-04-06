@@ -135,27 +135,50 @@ export const uploadFacultyCsv = catchAsync(async (req: Request, res: Response) =
 
 // Create faculty
 export const createFaculty = catchAsync(async (req: Request, res: Response) => {
-  // Check if user exists and has faculty role
-  const user = await UserModel.findById(req.body.userId);
-  if (!user) {
-    throw new AppError('No user found with that ID', 404);
-  }
-  if (!user.roles.includes('faculty')) {
-    throw new AppError('User must have faculty role', 400);
-  }
+  const { name, email, password, departmentId, employeeId, ...facultyData } = req.body;
 
   // Check if department exists
-  const department = await DepartmentModel.findById(req.body.departmentId);
+  const department = await DepartmentModel.findById(departmentId);
   if (!department) {
     throw new AppError('No department found with that ID', 404);
   }
 
-  // Create faculty
-  const faculty = await FacultyModel.create(req.body);
+  // Check if user with email already exists
+  const existingUser = await UserModel.findOne({ email });
+  if (existingUser) {
+    throw new AppError('User with this email already exists', 400);
+  }
+
+  // Create user first
+  const user = await UserModel.create({
+    name,
+    email,
+    password,
+    roles: ['faculty'],
+    department: departmentId
+  });
+
+  // Create faculty with the new user ID
+  const faculty = await FacultyModel.create({
+    ...facultyData,
+    userId: user._id,
+    departmentId,
+    employeeId,
+    qualifications: facultyData.qualifications?.map((q: { degree: string; field?: string; institution?: string; year: number }) => ({
+      ...q,
+      field: q.field || 'General',
+      institution: q.institution || 'Institution Pending'
+    }))
+  });
+
+  // Populate the faculty data
+  const populatedFaculty = await faculty.populate(['userId', 'departmentId']);
 
   res.status(201).json({
     status: 'success',
-    data: { faculty }
+    data: { 
+      faculty: populatedFaculty
+    }
   });
 });
 
