@@ -5,8 +5,11 @@ import {
   getFaculty,
   updateFaculty,
   deleteFaculty,
-  getFacultyByDepartment
+  getFacultyByDepartment,
+  exportFacultyCsv,
+  uploadFacultyCsv
 } from '../controllers/faculty.controller';
+import multer from 'multer';
 import { protect, restrictTo } from '../middleware/auth.middleware';
 
 const router = express.Router();
@@ -16,6 +19,12 @@ router.use(protect);
 
 // Routes restricted to admin and principal
 router.use(restrictTo('admin', 'principal'));
+
+// Configure multer for CSV upload
+const upload = multer();
+
+router.get('/export-csv', exportFacultyCsv);
+router.post('/upload-csv', upload.single('file'), uploadFacultyCsv);
 
 router
   .route('/')
