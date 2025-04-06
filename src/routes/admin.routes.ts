@@ -8,9 +8,18 @@ import {
   deleteUser,
   importUsers,
   exportUsers,
-  getRoles,
   assignRoles
 } from '../controllers/admin.controller';
+
+import {
+  getAllRoles,
+  getRole,
+  createRole,
+  updateRole,
+  deleteRole,
+  importRoles,
+  exportRoles
+} from '../controllers/role.controller';
 import { protect, restrictTo } from '../middleware/auth.middleware';
 
 const router = express.Router();
@@ -32,7 +41,15 @@ router.delete('/users/:id', deleteUser);
 router.post('/users/import', upload.single('file'), importUsers);
 
 // Role Management
-router.get('/roles', getRoles);
+router.get('/roles', getAllRoles);
+router.post('/roles', createRole);
+router.get('/roles/export', exportRoles);
+router.post('/roles/import', upload.single('file'), importRoles);
+router.get('/roles/:id', getRole);
+router.patch('/roles/:id', updateRole);
+router.delete('/roles/:id', deleteRole);
+
+// User Role Assignment
 router.patch('/users/:id/roles', assignRoles);
 
 export default router;

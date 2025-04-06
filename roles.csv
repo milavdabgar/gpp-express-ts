@@ -1,0 +1,3 @@
+Name,Description,Permissions
+Jury,Jur for Porject Fairr,"create,read,update,delete"
+Admin,Complete Admin,"create,read,update,delete"
