@@ -146,7 +146,12 @@ export const createFaculty = catchAsync(async (req: Request, res: Response) => {
   // Check if user with email already exists
   const existingUser = await UserModel.findOne({ email });
   if (existingUser) {
-    throw new AppError('User with this email already exists', 400);
+    throw new AppError(`A user with email ${email} already exists. Please use a different email address.`, 400);
+  }
+
+  // Validate required fields
+  if (!name || !email || !password || !departmentId || !employeeId) {
+    throw new AppError('Please provide all required fields: name, email, password, department, and employee ID', 400);
   }
 
   // Create user first
