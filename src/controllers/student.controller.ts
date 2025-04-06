@@ -3,7 +3,7 @@ import { StudentModel } from '../models/student.model';
 import { UserModel } from '../models/user.model';
 import { DepartmentModel } from '../models/department.model';
 import { catchAsync } from '../utils/async.utils';
-import AppError from '../utils/appError';
+import { AppError } from '../middleware/error.middleware';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
 import { Parser } from 'json2csv';
@@ -20,44 +20,80 @@ export const getAllStudents = catchAsync(async (_req: Request, res: Response) =>
   });
 });
 
+// Get single student
+export const getStudent = catchAsync(async (req: Request, res: Response) => {
+  const student = await StudentModel.findById(req.params.id)
+    .populate('userId', 'name email roles')
+    .populate('departmentId', 'name');
+
+  if (!student) {
+    throw new AppError('No student found with that ID', 404);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: { student }
+  });
+});
+
 // Create student
 export const createStudent = catchAsync(async (req: Request, res: Response) => {
-  const { name, email, password, rollNo, departmentId, semester, batch, joiningDate } = req.body;
+  const { name, email, password, enrollmentNo, departmentId, semester, batch, admissionDate } = req.body;
 
   // Check if user with email already exists
   const existingUser = await UserModel.findOne({ email });
+  let userId = null;
+  
   if (existingUser) {
-    throw new AppError(`A user with email ${email} already exists. Please use a different email address.`, 400);
+    // If user exists, check if it has student role
+    if (!existingUser.roles.includes('student')) {
+      existingUser.roles.push('student');
+      await existingUser.save();
+    }
+    userId = existingUser._id;
+  } else {
+    // Create user first
+    const user = await UserModel.create({
+      name,
+      email,
+      password,
+      department: departmentId,
+      roles: ['student'],
+      selectedRole: 'student'
+    });
+    userId = user._id;
   }
 
-  // Validate required fields
-  if (!name || !email || !password || !departmentId || !rollNo || !semester || !batch) {
-    throw new AppError('Please provide all required fields: name, email, password, department, roll number, semester, and batch', 400);
-  }
-
-  // Check if roll number already exists
-  const existingStudent = await StudentModel.findOne({ rollNo });
+  // Check if enrollment number already exists
+  const existingStudent = await StudentModel.findOne({ enrollmentNo });
   if (existingStudent) {
-    throw new AppError(`A student with roll number ${rollNo} already exists`, 400);
+    throw new AppError(`A student with enrollment number ${enrollmentNo} already exists`, 400);
   }
-
-  // Create user first
-  const user = await UserModel.create({
-    name,
-    email,
-    password,
-    roles: ['student']
-  });
 
   // Create student
   const student = await StudentModel.create({
-    userId: user._id,
+    userId,
     departmentId,
-    rollNo,
-    semester,
+    enrollmentNo,
+    semester: parseInt(semester),
     batch,
-    joiningDate: joiningDate || new Date(),
-    status: 'active'
+    admissionDate: admissionDate || new Date(),
+    status: 'active',
+    guardian: req.body.guardian || {
+      name: '',
+      relation: '',
+      contact: '',
+      occupation: ''
+    },
+    contact: req.body.contact || {
+      mobile: '',
+      email,
+      address: '',
+      city: '',
+      state: '',
+      pincode: ''
+    },
+    educationBackground: req.body.educationBackground || []
   });
 
   const populatedStudent = await student.populate([
@@ -68,8 +104,7 @@ export const createStudent = catchAsync(async (req: Request, res: Response) => {
   res.status(201).json({
     status: 'success',
     data: { 
-      student: populatedStudent,
-      password
+      student: populatedStudent
     }
   });
 });
@@ -108,15 +143,16 @@ export const updateStudent = catchAsync(async (req: Request, res: Response) => {
     // Update user
     await UserModel.findByIdAndUpdate(user._id, {
       name: req.body.name || user.name,
-      email: req.body.email || user.email
+      email: req.body.email || user.email,
+      department: req.body.departmentId || user.department
     });
   }
 
-  // If updating roll number, check if it already exists
-  if (req.body.rollNo && req.body.rollNo !== student.rollNo) {
-    const existingStudent = await StudentModel.findOne({ rollNo: req.body.rollNo });
+  // If updating enrollment number, check if it already exists
+  if (req.body.enrollmentNo && req.body.enrollmentNo !== student.enrollmentNo) {
+    const existingStudent = await StudentModel.findOne({ enrollmentNo: req.body.enrollmentNo });
     if (existingStudent) {
-      throw new AppError(`A student with roll number ${req.body.rollNo} already exists`, 400);
+      throw new AppError(`A student with enrollment number ${req.body.enrollmentNo} already exists`, 400);
     }
   }
 
@@ -170,7 +206,19 @@ export const deleteStudent = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-// Upload students from CSV
+// Get students by department
+export const getStudentsByDepartment = catchAsync(async (req: Request, res: Response) => {
+  const students = await StudentModel.find({ departmentId: req.params.departmentId })
+    .populate('userId', 'name email')
+    .populate('departmentId', 'name');
+
+  res.status(200).json({
+    status: 'success',
+    data: { students }
+  });
+});
+
+// Export students to CSV
 // Export students to CSV
 export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response) => {
   const students = await StudentModel.find()
@@ -178,31 +226,40 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
     .populate('departmentId', 'name');
 
   const fields = [
+    'enrollmentNo',
     'userId.name',
     'userId.email',
-    'enrollmentNo',
     'departmentId.name',
     'batch',
     'semester',
     'status',
-    'guardian.name',
-    'guardian.relation',
-    'guardian.contact',
-    'guardian.occupation',
-    'contact.mobile',
-    'contact.email',
-    'contact.address',
-    'contact.city',
-    'contact.state',
-    'contact.pincode'
+    'admissionDate'
   ];
 
-  const json2csvParser = new Parser({ fields });
-  const csvData = json2csvParser.parse(students);
+  // Convert students to plain objects with proper type handling
+  const studentsData = students.map(student => {
+    const plainStudent = student.toObject();
+    return {
+      enrollmentNo: plainStudent.enrollmentNo,
+      'userId.name': plainStudent.userId && typeof plainStudent.userId === 'object' ? 
+        (plainStudent.userId as any).name : '',
+      'userId.email': plainStudent.userId && typeof plainStudent.userId === 'object' ? 
+        (plainStudent.userId as any).email : '',
+      'departmentId.name': plainStudent.departmentId && typeof plainStudent.departmentId === 'object' ? 
+        (plainStudent.departmentId as any).name : '',
+      batch: plainStudent.batch,
+      semester: plainStudent.semester,
+      status: plainStudent.status,
+      admissionDate: plainStudent.admissionDate
+    };
+  });
+
+  const parser = new Parser({ fields });
+  const csv = parser.parse(studentsData);
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=students.csv');
-  res.status(200).send(csvData);
+  res.status(200).send(csv);
 });
 
 export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) => {
@@ -225,37 +282,66 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
 
   for (const row of results) {
     try {
-      // Check if user already exists
+      // Find or create department
+      let department = await DepartmentModel.findOne({ name: row.department });
+      if (!department) {
+        department = await DepartmentModel.findOne({ _id: row.departmentId });
+        if (!department) {
+          console.log(`Skipping student with department ${row.department || row.departmentId} as it doesn't exist`);
+          continue;
+        }
+      }
+
+      // Create or update user
+      let user;
       const existingUser = await UserModel.findOne({ email: row.email });
       if (existingUser) {
-        console.log(`Skipping user ${row.name} as email ${row.email} already exists`);
-        continue;
+        user = existingUser;
+        if (!user.roles.includes('student')) {
+          user.roles.push('student');
+          await user.save();
+        }
+      } else {
+        user = await UserModel.create({
+          name: row.name,
+          email: row.email,
+          password: 'Student@123', // Default password
+          department: department._id,
+          roles: ['student'],
+          selectedRole: 'student'
+        });
       }
 
-      // Check if roll number already exists
-      const existingStudent = await StudentModel.findOne({ rollNo: row.rollNo });
+      // Check if student with enrollment number already exists
+      const existingStudent = await StudentModel.findOne({ enrollmentNo: row.enrollmentNo });
       if (existingStudent) {
-        console.log(`Skipping student with roll number ${row.rollNo} as it already exists`);
+        console.log(`Skipping student with enrollment number ${row.enrollmentNo} as it already exists`);
         continue;
       }
-
-      // Create user
-      const user = await UserModel.create({
-        name: row.name,
-        email: row.email,
-        password: 'Student@123',
-        roles: ['student']
-      });
 
       // Create student
       const student = await StudentModel.create({
         userId: user._id,
-        departmentId: row.departmentId,
-        rollNo: row.rollNo,
-        semester: parseInt(row.semester),
-        batch: row.batch,
-        joiningDate: row.joiningDate || new Date(),
-        status: 'active'
+        departmentId: department._id,
+        enrollmentNo: row.enrollmentNo,
+        semester: parseInt(row.semester) || 1,
+        batch: row.batch || '2022-2025',
+        admissionDate: row.admissionDate || new Date(),
+        status: row.status || 'active',
+        guardian: {
+          name: row.guardianName || '',
+          relation: row.guardianRelation || '',
+          contact: row.guardianContact || '',
+          occupation: row.guardianOccupation || ''
+        },
+        contact: {
+          mobile: row.mobile || '',
+          email: row.email || '',
+          address: row.address || '',
+          city: row.city || '',
+          state: row.state || '',
+          pincode: row.pincode || ''
+        }
       });
 
       const populatedStudent = await student.populate([
@@ -265,7 +351,7 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
 
       students.push(populatedStudent);
     } catch (error) {
-      console.error(`Error creating student entry for user ${row.name}:`, error);
+      console.error(`Error creating student entry:`, error);
     }
   }
 

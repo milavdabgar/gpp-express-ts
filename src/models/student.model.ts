@@ -11,10 +11,14 @@ const studentSchema = new mongoose.Schema({
     ref: 'Department',
     required: [true, 'A student must be associated with a department']
   },
-  rollNo: {
+  enrollmentNo: {
     type: String,
-    required: [true, 'Roll number is required'],
+    required: [true, 'Enrollment number is required'],
     unique: true
+  },
+  batch: {
+    type: String,
+    required: [true, 'Batch year is required']
   },
   semester: {
     type: Number,
@@ -22,19 +26,81 @@ const studentSchema = new mongoose.Schema({
     min: 1,
     max: 8
   },
-  batch: {
-    type: String,
-    required: [true, 'Batch year is required']
+  admissionDate: {
+    type: Date,
+    required: [true, 'Admission date is required']
   },
   status: {
     type: String,
-    enum: ['active', 'inactive'],
+    enum: ['active', 'inactive', 'graduated', 'transferred', 'dropped'],
     default: 'active'
   },
-  joiningDate: {
-    type: Date,
-    required: [true, 'Joining date is required']
-  }
+  guardian: {
+    name: {
+      type: String,
+      default: ''
+    },
+    relation: {
+      type: String,
+      default: ''
+    },
+    contact: {
+      type: String,
+      default: ''
+    },
+    occupation: {
+      type: String,
+      default: ''
+    }
+  },
+  contact: {
+    mobile: {
+      type: String,
+      default: ''
+    },
+    email: {
+      type: String,
+      default: ''
+    },
+    address: {
+      type: String,
+      default: ''
+    },
+    city: {
+      type: String,
+      default: ''
+    },
+    state: {
+      type: String,
+      default: ''
+    },
+    pincode: {
+      type: String,
+      default: ''
+    }
+  },
+  educationBackground: [{
+    degree: {
+      type: String,
+      required: true
+    },
+    institution: {
+      type: String,
+      required: true
+    },
+    board: {
+      type: String,
+      required: true
+    },
+    percentage: {
+      type: Number,
+      required: true
+    },
+    yearOfPassing: {
+      type: Number,
+      required: true
+    }
+  }]
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
