@@ -7,6 +7,7 @@ import { AppError } from '../middleware/error.middleware';
 import csv from 'csv-parse';
 import { stringify } from 'csv-stringify';
 import { Readable } from 'stream';
+import bcrypt from 'bcryptjs';
 
 // Export faculty to CSV
 export const exportFacultyCsv = catchAsync(async (_req: Request, res: Response) => {
@@ -20,28 +21,48 @@ export const exportFacultyCsv = catchAsync(async (_req: Request, res: Response) 
       select: 'name'
     });
   
-  const csvData = faculty.map(f => ({
-    name: (f.userId as any)?.name || '',
-    email: (f.userId as any)?.email || '',
-    employeeId: f.employeeId,
-    department: (f.departmentId as any)?.name || '',
-    designation: f.designation,
-    specializations: f.specializations.join(','),
-    qualifications: f.qualifications.map(q => q.degree).join(','),
-    field: f.qualifications[0]?.field || '',
-    institution: f.qualifications[0]?.institution || '',
-    year: f.qualifications[0]?.year || '',
-    joiningDate: f.joiningDate.toISOString().split('T')[0],
-    experienceYears: f.experience.years,
-    experienceDetails: f.experience.details
-  }));
+  const csvData = faculty.map(f => {
+    // Get all qualifications
+    const qualifications = f.qualifications.map(q => 
+      `${q.degree}|${q.field}|${q.institution}|${q.year}`
+    ).join(';');
+
+    return {
+      'Employee ID': f.employeeId,
+      'Name': (f.userId as any)?.name || '',
+      'Email': (f.userId as any)?.email || '',
+      'Department': (f.departmentId as any)?.name || '',
+      'Designation': f.designation,
+      'Status': f.status,
+      'Joining Date': f.joiningDate.toISOString().split('T')[0],
+      'Specializations': f.specializations.join('; '),
+      // Qualifications (each entry: degree|field|institution|year)
+      'Qualifications': qualifications,
+      // Experience
+      'Experience Years': f.experience.years,
+      'Experience Details': f.experience.details,
+      // Metadata
+      'Created At': f.createdAt.toISOString().split('T')[0],
+      'Last Updated': f.updatedAt.toISOString().split('T')[0]
+    };
+  });
 
   const stringifier = stringify({
     header: true,
     columns: [
-      'name', 'email', 'employeeId', 'department', 'designation',
-      'specializations', 'qualifications', 'field', 'institution',
-      'year', 'joiningDate', 'experienceYears', 'experienceDetails'
+      'Employee ID',
+      'Name',
+      'Email',
+      'Department',
+      'Designation',
+      'Status',
+      'Joining Date',
+      'Specializations',
+      'Qualifications',
+      'Experience Years',
+      'Experience Details',
+      'Created At',
+      'Last Updated'
     ]
   });
 
@@ -49,22 +70,9 @@ export const exportFacultyCsv = catchAsync(async (_req: Request, res: Response) 
   res.setHeader('Content-Disposition', 'attachment; filename=faculty.csv');
 
   stringifier.pipe(res);
-  csvData.forEach(row => stringifier.write(row));
+  csvData.forEach((row) => stringifier.write(row));
   stringifier.end();
 });
-
-// Helper function to create a user
-async function createUser(name: string, email: string, departmentId: string) {
-  const password = Math.random().toString(36).slice(-8); // Generate random password
-  const user = await UserModel.create({
-    name,
-    email,
-    password,
-    roles: ['faculty'],
-    department: departmentId
-  });
-  return { user, password };
-}
 
 // Upload faculty from CSV
 export const uploadFacultyCsv = catchAsync(async (req: Request, res: Response) => {
@@ -83,40 +91,60 @@ export const uploadFacultyCsv = catchAsync(async (req: Request, res: Response) =
 
   for await (const row of parser) {
     try {
-      // Find or create department
-      let department = await DepartmentModel.findOne({ name: row.department });
+      // Find department
+      const department = await DepartmentModel.findOne({ name: row['Department'] });
       if (!department) {
-        throw new AppError(`Department ${row.department} not found`, 400);
+        throw new AppError(`Department ${row['Department']} not found`, 400);
       }
 
-      // Create user
-      const { user, password } = await createUser(row.name, row.email, department._id);
+      // Check if user exists with this email
+      let user = await UserModel.findOne({ email: row['Email'] });
+      if (!user && row['Email'] && row['Name']) {
+        // Create new user only if email and name are provided
+        const password = await bcrypt.hash('Student@123', 12);
+        user = await UserModel.create({
+          name: row['Name'],
+          email: row['Email'],
+          password,
+          roles: ['faculty'],
+          department: department._id
+        });
+      }
+
+      if (!user) {
+        throw new AppError('User email and name are required for new faculty members', 400);
+      }
+
+      // Parse qualifications
+      const qualifications = row['Qualifications'].split(';').map((q: string) => {
+        const [degree, field, institution, year] = q.split('|');
+        return {
+          degree: degree?.trim() || '',
+          field: field?.trim() || '',
+          institution: institution?.trim() || '',
+          year: parseInt(year?.trim()) || new Date().getFullYear()
+        };
+      });
 
       // Create faculty
       const faculty = await FacultyModel.create({
         userId: user._id,
         departmentId: department._id,
-        employeeId: row.employeeId,
-        designation: row.designation,
-        specializations: row.specializations?.split(',').map((s: string) => s.trim()) || [],
-        qualifications: row.qualifications?.split(',').map((q: string) => ({
-          degree: q.trim(),
-          field: row.field || '',
-          institution: row.institution || '',
-          year: parseInt(row.year) || new Date().getFullYear()
-        })) || [],
-        joiningDate: row.joiningDate || new Date(),
-        status: 'active',
+        employeeId: row['Employee ID'],
+        designation: row['Designation'],
+        specializations: row['Specializations']?.split(';').map((s: string) => s.trim()) || [],
+        qualifications,
+        joiningDate: new Date(row['Joining Date']),
+        status: row['Status'] || 'active',
         experience: {
-          years: parseInt(row.experienceYears) || 0,
-          details: row.experienceDetails || ''
+          years: parseInt(row['Experience Years']) || 0,
+          details: row['Experience Details'] || ''
         }
       });
 
       results.push({
         name: user.name,
         email: user.email,
-        password,
         employeeId: faculty.employeeId
       });
     } catch (error: any) {
