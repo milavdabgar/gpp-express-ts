@@ -11,7 +11,7 @@ import { Parser } from 'json2csv';
 // Get all students
 export const getAllStudents = catchAsync(async (_req: Request, res: Response) => {
   const students = await StudentModel.find()
-    .populate('userId', 'name email')
+    .populate('userId', 'name email roles')
     .populate('departmentId', 'name');
 
   res.status(200).json({
@@ -174,7 +174,7 @@ export const deleteStudent = catchAsync(async (req: Request, res: Response) => {
 // Export students to CSV
 export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response) => {
   const students = await StudentModel.find()
-    .populate('userId', 'name email')
+    .populate('userId', 'name email roles')
     .populate('departmentId', 'name');
 
   const fields = [
