@@ -221,11 +221,40 @@ export const updateFaculty = catchAsync(async (req: Request, res: Response) => {
   if (req.body.departmentId) {
     const department = await DepartmentModel.findById(req.body.departmentId);
     if (!department) {
-      throw new AppError('No department found with that ID', 404);
+      throw new AppError('Department not found', 404);
     }
   }
 
-  const faculty = await FacultyModel.findByIdAndUpdate(
+  // Find faculty first
+  const faculty = await FacultyModel.findById(req.params.id);
+  if (!faculty) {
+    throw new AppError('No faculty found with that ID', 404);
+  }
+
+  // Update user if name or email is provided
+  if (req.body.name || req.body.email) {
+    const user = await UserModel.findById(faculty.userId);
+    if (!user) {
+      throw new AppError('Associated user not found', 404);
+    }
+
+    // If email is being changed, check if new email already exists
+    if (req.body.email && req.body.email !== user.email) {
+      const existingUser = await UserModel.findOne({ email: req.body.email });
+      if (existingUser) {
+        throw new AppError(`A user with email ${req.body.email} already exists`, 400);
+      }
+    }
+
+    // Update user
+    await UserModel.findByIdAndUpdate(user._id, {
+      name: req.body.name || user.name,
+      email: req.body.email || user.email
+    });
+  }
+
+  // Update faculty
+  const updatedFaculty = await FacultyModel.findByIdAndUpdate(
     req.params.id,
     req.body,
     {
@@ -235,13 +264,9 @@ export const updateFaculty = catchAsync(async (req: Request, res: Response) => {
   ).populate('userId', 'name email')
    .populate('departmentId', 'name');
 
-  if (!faculty) {
-    throw new AppError('No faculty found with that ID', 404);
-  }
-
   res.status(200).json({
     status: 'success',
-    data: { faculty }
+    data: { faculty: updatedFaculty }
   });
 });
 
