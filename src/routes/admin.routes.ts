@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import {
+  createUser,
   getAllUsers,
   getUser,
   updateUser,
@@ -20,6 +21,7 @@ router.use(protect);
 router.use(restrictTo('admin'));
 
 // User Management
+router.post('/users', createUser);
 router.get('/users', getAllUsers);
 router.get('/users/export', exportUsers);
 router.get('/users/:id', getUser);

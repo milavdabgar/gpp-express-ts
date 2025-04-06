@@ -7,6 +7,36 @@ import { Parser } from 'json2csv';
 import bcrypt from 'bcryptjs';
 
 // User Management
+export const createUser = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { name, email, department, roles, password = '123456' } = req.body;
+
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create new user
+    const user = await UserModel.create({
+      name,
+      email,
+      department,
+      roles,
+      password: hashedPassword,
+      selectedRole: roles[0]
+    });
+
+    // Convert to plain object and remove password
+    const userResponse = user.toObject();
+    const { password: _, ...userWithoutPassword } = userResponse;
+
+    res.status(201).json({
+      status: 'success',
+      data: { user: userWithoutPassword }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getAllUsers = async (_: Request, res: Response, next: NextFunction) => {
   try {
     const users = await UserModel.find().select('-password');
