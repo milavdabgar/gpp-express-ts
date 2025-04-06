@@ -37,9 +37,11 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
   }
 };
 
-export const getAllUsers = async (_: Request, res: Response, next: NextFunction) => {
+export const getAllUsers = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const users = await UserModel.find().select('-password');
+    const { role } = req.query;
+    const query = role ? { roles: role } : {};
+    const users = await UserModel.find(query).select('-password');
     res.status(200).json({
       status: 'success',
       data: { users }
