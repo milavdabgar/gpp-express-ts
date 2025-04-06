@@ -293,6 +293,7 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
     .populate('departmentId', 'name');
 
   const fields = [
+    // Basic Info
     { label: 'Enrollment No', value: 'enrollmentNo' },
     { label: 'Name', value: 'name' },
     { label: 'Email', value: 'email' },
@@ -300,7 +301,21 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
     { label: 'Batch', value: 'batch' },
     { label: 'Semester', value: 'semester' },
     { label: 'Status', value: 'status' },
-    { label: 'Admission Date', value: 'admissionDate' }
+    { label: 'Admission Date', value: 'admissionDate' },
+    // Contact Info
+    { label: 'Mobile', value: 'contact.mobile' },
+    { label: 'Contact Email', value: 'contact.email' },
+    { label: 'Address', value: 'contact.address' },
+    { label: 'City', value: 'contact.city' },
+    { label: 'State', value: 'contact.state' },
+    { label: 'Pincode', value: 'contact.pincode' },
+    // Guardian Info
+    { label: 'Guardian Name', value: 'guardian.name' },
+    { label: 'Guardian Relation', value: 'guardian.relation' },
+    { label: 'Guardian Contact', value: 'guardian.contact' },
+    { label: 'Guardian Occupation', value: 'guardian.occupation' },
+    // Education Background
+    { label: 'Education Background', value: 'educationBackground' }
   ];
 
   // Convert students to plain objects with proper type handling
@@ -308,7 +323,14 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
     const plainStudent = student.toObject();
     const user = plainStudent.userId as unknown as { name: string; email: string } | null;
     const dept = plainStudent.departmentId as unknown as { name: string } | null;
+
+    // Format education background as a string
+    const educationStr = plainStudent.educationBackground?.map((edu: any) => 
+      `${edu.degree}|${edu.institution}|${edu.board}|${edu.percentage}|${edu.yearOfPassing}`
+    ).join('; ') || '';
+
     return {
+      // Basic Info
       enrollmentNo: plainStudent.enrollmentNo || '',
       name: user?.name || '',
       email: user?.email || '',
@@ -316,7 +338,25 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
       batch: plainStudent.batch || '',
       semester: plainStudent.semester || '',
       status: plainStudent.status || '',
-      admissionDate: plainStudent.admissionDate ? new Date(plainStudent.admissionDate).toISOString().split('T')[0] : ''
+      admissionDate: plainStudent.admissionDate ? new Date(plainStudent.admissionDate).toISOString().split('T')[0] : '',
+      // Contact Info
+      contact: {
+        mobile: plainStudent.contact?.mobile || '',
+        email: plainStudent.contact?.email || '',
+        address: plainStudent.contact?.address || '',
+        city: plainStudent.contact?.city || '',
+        state: plainStudent.contact?.state || '',
+        pincode: plainStudent.contact?.pincode || ''
+      },
+      // Guardian Info
+      guardian: {
+        name: plainStudent.guardian?.name || '',
+        relation: plainStudent.guardian?.relation || '',
+        contact: plainStudent.guardian?.contact || '',
+        occupation: plainStudent.guardian?.occupation || ''
+      },
+      // Education Background
+      educationBackground: educationStr
     };
   });
 
@@ -339,7 +379,25 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
   await new Promise((resolve, reject) => {
     stream
       .pipe(csv())
-      .on('data', (data) => results.push(data))
+      .on('data', (data) => {
+        // Process education background from string to array
+        const educationBackground = data['Education Background'] ? 
+          data['Education Background'].split(';').map((edu: string) => {
+            const [degree, institution, board, percentage, yearOfPassing] = edu.split('|');
+            return {
+              degree: degree?.trim(),
+              institution: institution?.trim(),
+              board: board?.trim(),
+              percentage: parseFloat(percentage) || 0,
+              yearOfPassing: parseInt(yearOfPassing) || new Date().getFullYear()
+            };
+          }) : [];
+
+        results.push({
+          ...data,
+          educationBackground
+        });
+      })
       .on('end', resolve)
       .on('error', reject);
   });
@@ -358,34 +416,46 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
         batch: row['Batch'] || row.batch,
         semester: row['Semester'] || row.semester,
         status: row['Status'] || row.status || 'active',
-        admissionDate: row['Admission Date'] || row.admissionDate || new Date().toISOString().split('T')[0]
+        admissionDate: row['Admission Date'] || row.admissionDate || new Date().toISOString().split('T')[0],
+        // Contact Info
+        contact: {
+          mobile: row['Mobile'] || '',
+          email: row['Contact Email'] || row.email,
+          address: row['Address'] || '',
+          city: row['City'] || '',
+          state: row['State'] || '',
+          pincode: row['Pincode'] || ''
+        },
+        // Guardian Info
+        guardian: {
+          name: row['Guardian Name'] || '',
+          relation: row['Guardian Relation'] || '',
+          contact: row['Guardian Contact'] || '',
+          occupation: row['Guardian Occupation'] || ''
+        },
+        // Education Background
+        educationBackground: row.educationBackground || []
       };
 
-      // Find department by name
-      const department = await DepartmentModel.findOne({ 
-        name: { $regex: new RegExp(`^${studentData.department}$`, 'i') }
-      });
-      
-      if (!department) {
-        errors.push(`Skipping student ${studentData.name}: Department '${studentData.department}' not found`);
-        continue;
-      }
-
-      // Create or find user
+      // Check if user exists
       let user = await UserModel.findOne({ email: studentData.email });
+
       if (!user) {
-        const hashedPassword = await bcrypt.hash('Student@123', 12);
+        // Create new user
+        const password = await bcrypt.hash('Student@123', 12); // Default password
         user = await UserModel.create({
           name: studentData.name,
           email: studentData.email,
-          password: hashedPassword,
-          department: department._id,
+          password,
           roles: ['student'],
           selectedRole: 'student'
         });
-      } else if (!user.roles.includes('student')) {
-        user.roles.push('student');
-        await user.save();
+      }
+
+      // Find department by name
+      const department = await DepartmentModel.findOne({ name: studentData.department });
+      if (!department) {
+        throw new Error(`Department ${studentData.department} not found`);
       }
 
       // Check if student with enrollment number already exists
@@ -394,11 +464,10 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
       });
       
       if (existingStudent) {
-        errors.push(`Skipping student ${studentData.name}: Enrollment number '${studentData.enrollmentNo}' already exists`);
-        continue;
+        throw new Error(`Enrollment number ${studentData.enrollmentNo} already exists`);
       }
 
-      // Create student
+      // Create student record
       const student = await StudentModel.create({
         userId: user._id,
         departmentId: department._id,
@@ -407,39 +476,27 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
         batch: studentData.batch,
         admissionDate: new Date(studentData.admissionDate),
         status: studentData.status,
-        guardian: {
-          name: row['Guardian Name'] || '',
-          relation: row['Guardian Relation'] || '',
-          contact: row['Guardian Contact'] || '',
-          occupation: row['Guardian Occupation'] || ''
-        },
-        contact: {
-          mobile: row['Mobile'] || '',
-          email: studentData.email,
-          address: row['Address'] || '',
-          city: row['City'] || '',
-          state: row['State'] || '',
-          pincode: row['Pincode'] || ''
-        }
+        // Contact Info
+        contact: studentData.contact,
+        // Guardian Info
+        guardian: studentData.guardian,
+        // Education Background
+        educationBackground: studentData.educationBackground
       });
 
-      const populatedStudent = await student.populate([
-        { path: 'userId', select: 'name email' },
-        { path: 'departmentId', select: 'name' }
-      ]);
-
-      students.push(populatedStudent);
+      students.push(student);
     } catch (error) {
-      errors.push(`Error creating student ${row['Name'] || row.name}: ${error.message}`);
+      errors.push(`Error creating student: ${(error as Error).message}`);
     }
   }
 
-  res.status(201).json({
+  res.status(200).json({
     status: 'success',
     data: { 
       students,
       errors,
-      summary: `Successfully imported ${students.length} students. ${errors.length} errors encountered.`
+      totalCreated: students.length,
+      totalErrors: errors.length
     }
   });
 });
