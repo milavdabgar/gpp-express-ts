@@ -2,15 +2,16 @@ import { Request, Response } from 'express';
 import { StudentModel } from '../models/student.model';
 import { UserModel } from '../models/user.model';
 import { DepartmentModel } from '../models/department.model';
-import { catchAsync } from '../utils/async.utils';
 import { AppError } from '../middleware/error.middleware';
+import { catchAsync } from '../utils/catchAsync';
 import csv from 'csv-parser';
-import { Readable } from 'stream';
 import { Parser } from 'json2csv';
+import { Readable } from 'stream';
+import bcrypt from 'bcryptjs';
 
 // Get all students
 export const getAllStudents = catchAsync(async (_req: Request, res: Response) => {
-  const students = await StudentModel.find()
+  const students = await StudentModel.find({ userId: { $ne: null } })
     .populate('userId', 'name email roles')
     .populate('departmentId', 'name');
 
@@ -22,7 +23,7 @@ export const getAllStudents = catchAsync(async (_req: Request, res: Response) =>
 
 // Get single student
 export const getStudent = catchAsync(async (req: Request, res: Response) => {
-  const student = await StudentModel.findById(req.params.id)
+  const student = await StudentModel.findOne({ _id: req.params.id, userId: { $ne: null } })
     .populate('userId', 'name email roles')
     .populate('departmentId', 'name');
 
@@ -120,7 +121,7 @@ export const updateStudent = catchAsync(async (req: Request, res: Response) => {
   }
 
   // Find student first
-  const student = await StudentModel.findById(req.params.id);
+  const student = await StudentModel.findOne({ _id: req.params.id, userId: { $ne: null } });
   if (!student) {
     throw new AppError('No student found with that ID', 404);
   }
@@ -208,8 +209,8 @@ export const deleteStudent = catchAsync(async (req: Request, res: Response) => {
 
 // Get students by department
 export const getStudentsByDepartment = catchAsync(async (req: Request, res: Response) => {
-  const students = await StudentModel.find({ departmentId: req.params.departmentId })
-    .populate('userId', 'name email')
+  const students = await StudentModel.find({ departmentId: req.params.departmentId, userId: { $ne: null } })
+    .populate('userId', 'name email roles')
     .populate('departmentId', 'name');
 
   res.status(200).json({
@@ -221,7 +222,7 @@ export const getStudentsByDepartment = catchAsync(async (req: Request, res: Resp
 // Export students to CSV
 // Export students to CSV
 export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response) => {
-  const students = await StudentModel.find()
+  const students = await StudentModel.find({ userId: { $ne: null } })
     .populate('userId', 'name email roles')
     .populate('departmentId', 'name');
 
@@ -239,14 +240,13 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
   // Convert students to plain objects with proper type handling
   const studentsData = students.map(student => {
     const plainStudent = student.toObject();
+    const user = plainStudent.userId as unknown as { name: string; email: string } | null;
+    const dept = plainStudent.departmentId as unknown as { name: string } | null;
     return {
       enrollmentNo: plainStudent.enrollmentNo || '',
-      name: plainStudent.userId && typeof plainStudent.userId === 'object' ? 
-        (plainStudent.userId as any).name : '',
-      email: plainStudent.userId && typeof plainStudent.userId === 'object' ? 
-        (plainStudent.userId as any).email : '',
-      department: plainStudent.departmentId && typeof plainStudent.departmentId === 'object' ? 
-        (plainStudent.departmentId as any).name : '',
+      name: user?.name || '',
+      email: user?.email || '',
+      department: dept?.name || '',
       batch: plainStudent.batch || '',
       semester: plainStudent.semester || '',
       status: plainStudent.status || '',
@@ -292,7 +292,7 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
         batch: row['Batch'] || row.batch,
         semester: row['Semester'] || row.semester,
         status: row['Status'] || row.status || 'active',
-        admissionDate: row['Admission Date'] || row.admissionDate || new Date().toISOString()
+        admissionDate: row['Admission Date'] || row.admissionDate || new Date().toISOString().split('T')[0]
       };
 
       // Find department by name
@@ -305,17 +305,21 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
         continue;
       }
 
-      // Create or update user
+      // Create or find user
       let user = await UserModel.findOne({ email: studentData.email });
       if (!user) {
+        const hashedPassword = await bcrypt.hash('Student@123', 12);
         user = await UserModel.create({
           name: studentData.name,
           email: studentData.email,
-          password: 'Student@123', // Default password
+          password: hashedPassword,
           department: department._id,
           roles: ['student'],
           selectedRole: 'student'
         });
+      } else if (!user.roles.includes('student')) {
+        user.roles.push('student');
+        await user.save();
       }
 
       // Check if student with enrollment number already exists
