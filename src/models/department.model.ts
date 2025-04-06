@@ -49,4 +49,4 @@ const departmentSchema = new Schema({
 departmentSchema.index({ name: 1 });
 departmentSchema.index({ code: 1 });
 
-export const Department = mongoose.model<IDepartment>('Department', departmentSchema);
+export const DepartmentModel = mongoose.model<IDepartment>('Department', departmentSchema);

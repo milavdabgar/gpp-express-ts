@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
-import { Department } from '../models/department';
+import { DepartmentModel } from '../models/department.model';
 import { UserModel } from '../models/user.model';
 import { AppError } from '../middleware/error.middleware';
 import { catchAsync } from '../utils/async.utils';
 
 // Get all departments
 export const getAllDepartments = catchAsync(async (_req: Request, res: Response) => {
-  const departments = await Department.find()
+  const departments = await DepartmentModel.find()
     .populate('hodId', 'name email')
     .sort({ name: 1 });
 
@@ -20,7 +20,7 @@ export const getAllDepartments = catchAsync(async (_req: Request, res: Response)
 
 // Get single department
 export const getDepartment = catchAsync(async (req: Request, res: Response) => {
-  const department = await Department.findById(req.params.id)
+  const department = await DepartmentModel.findById(req.params.id)
     .populate('hodId', 'name email');
 
   if (!department) {
@@ -49,7 +49,7 @@ export const createDepartment = catchAsync(async (req: Request, res: Response) =
     }
   }
 
-  const department = await Department.create(req.body);
+  const department = await DepartmentModel.create(req.body);
 
   res.status(201).json({
     status: 'success',
@@ -73,7 +73,7 @@ export const updateDepartment = catchAsync(async (req: Request, res: Response) =
     }
   }
 
-  const department = await Department.findByIdAndUpdate(
+  const department = await DepartmentModel.findByIdAndUpdate(
     req.params.id,
     req.body,
     {
@@ -96,7 +96,7 @@ export const updateDepartment = catchAsync(async (req: Request, res: Response) =
 
 // Delete department
 export const deleteDepartment = catchAsync(async (req: Request, res: Response) => {
-  const department = await Department.findByIdAndDelete(req.params.id);
+  const department = await DepartmentModel.findByIdAndDelete(req.params.id);
 
   if (!department) {
     throw new AppError('No department found with that ID', 404);
@@ -110,7 +110,7 @@ export const deleteDepartment = catchAsync(async (req: Request, res: Response) =
 
 // Get department statistics
 export const getDepartmentStats = catchAsync(async (_req: Request, res: Response) => {
-  const stats = await Department.aggregate([
+  const stats = await DepartmentModel.aggregate([
     {
       $lookup: {
         from: 'users',
