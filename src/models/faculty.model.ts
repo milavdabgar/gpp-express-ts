@@ -14,7 +14,10 @@ export interface IFaculty extends Document {
   }[];
   joiningDate: Date;
   status: 'active' | 'inactive';
-  experience: number;
+  experience: {
+    years: number;
+    details: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,8 +75,15 @@ const facultySchema = new Schema({
     default: 'active'
   },
   experience: {
-    type: Number,
-    required: true
+    years: {
+      type: Number,
+      required: true,
+      default: 0
+    },
+    details: {
+      type: String,
+      default: ''
+    }
   }
 }, {
   timestamps: true
