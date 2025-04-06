@@ -86,7 +86,7 @@ export const getStudentResults = catchAsync(async (req: Request, res: Response) 
 });
 
 // Get recent upload batches
-export const getUploadBatches = catchAsync(async (req: Request, res: Response) => {
+export const getUploadBatches = catchAsync(async (_req: Request, res: Response) => {
   const batches = await ResultModel.aggregate([
     {
       $group: {
@@ -235,12 +235,14 @@ export const importResults = catchAsync(async (req: Request, res: Response) => {
     // Save to database
     const savedResults = await ResultModel.insertMany(resultsWithBatch, {
       ordered: false // Continue inserting even if some fail (due to duplicates)
-    }).catch((error) => {
+    }).then(docs => ({
+      insertedCount: docs.length,
+      error: undefined
+    })).catch((error: any) => {
       // Check if it's a duplicate key error
       if (error.code === 11000) {
         return {
           insertedCount: error.result?.insertedCount || 0,
-          insertedIds: error.insertedIds || {},
           error: 'Some results were not imported due to duplicates'
         };
       }
