@@ -78,19 +78,19 @@ export const importUsers = async (req: Request & { file?: Express.Multer.File },
       return next(new AppError('Please upload a CSV file', 400));
     }
 
-    const results: any[] = [];
+    const csvRows: any[] = [];
     const stream = Readable.from(req.file.buffer.toString());
 
     await new Promise((resolve, reject) => {
       stream
         .pipe(csv())
-        .on('data', (data) => results.push(data))
+        .on('data', (data) => csvRows.push(data))
         .on('end', resolve)
         .on('error', reject);
     });
 
     const users = await Promise.all(
-      results.map(async (row) => {
+      csvRows.map(async (row) => {
         const hashedPassword = await bcrypt.hash(row.password || 'ChangeMe@123', 12);
         return {
           name: row.name,
@@ -103,11 +103,29 @@ export const importUsers = async (req: Request & { file?: Express.Multer.File },
       })
     );
 
-    await UserModel.insertMany(users);
+    // Process each user individually to handle duplicates
+    const importResults = await Promise.all(
+      users.map(async (user) => {
+        try {
+          // Try to update existing user or create new one
+          const updatedUser = await UserModel.findOneAndUpdate(
+            { email: user.email },
+            user,
+            { upsert: true, new: true }
+          );
+          return { success: true, user: updatedUser };
+        } catch (error) {
+          return { success: false, email: user.email, error };
+        }
+      })
+    );
+
+    const successful = importResults.filter(r => r.success).length;
+    const failed = importResults.filter(r => !r.success).length;
 
     res.status(200).json({
       status: 'success',
-      message: `${users.length} users imported successfully`
+      message: `${successful} users imported/updated successfully, ${failed} failed`
     });
   } catch (error) {
     next(error);
