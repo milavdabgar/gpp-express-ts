@@ -3,12 +3,13 @@ import { StudentModel } from '../models/student.model';
 import { UserModel } from '../models/user.model';
 import { DepartmentModel } from '../models/department.model';
 import { catchAsync } from '../utils/async.utils';
-import { AppError } from '../utils/error.utils';
+import AppError from '../utils/appError';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
+import { Parser } from 'json2csv';
 
 // Get all students
-export const getAllStudents = catchAsync(async (req: Request, res: Response) => {
+export const getAllStudents = catchAsync(async (_req: Request, res: Response) => {
   const students = await StudentModel.find()
     .populate('userId', 'name email')
     .populate('departmentId', 'name');
@@ -170,6 +171,40 @@ export const deleteStudent = catchAsync(async (req: Request, res: Response) => {
 });
 
 // Upload students from CSV
+// Export students to CSV
+export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response) => {
+  const students = await StudentModel.find()
+    .populate('userId', 'name email')
+    .populate('departmentId', 'name');
+
+  const fields = [
+    'userId.name',
+    'userId.email',
+    'enrollmentNo',
+    'departmentId.name',
+    'batch',
+    'semester',
+    'status',
+    'guardian.name',
+    'guardian.relation',
+    'guardian.contact',
+    'guardian.occupation',
+    'contact.mobile',
+    'contact.email',
+    'contact.address',
+    'contact.city',
+    'contact.state',
+    'contact.pincode'
+  ];
+
+  const json2csvParser = new Parser({ fields });
+  const csvData = json2csvParser.parse(students);
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=students.csv');
+  res.status(200).send(csvData);
+});
+
 export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) => {
   if (!req.file) {
     throw new AppError('Please upload a CSV file', 400);

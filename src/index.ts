@@ -7,6 +7,7 @@ import userRoutes from './routes/user.routes';
 import adminRoutes from './routes/admin.routes';
 import departmentRoutes from './routes/department.routes';
 import facultyRoutes from './routes/faculty.routes';
+import studentRoutes from './routes/student.routes';
 import { errorHandler } from './middleware/error.middleware';
 
 // Load environment variables
@@ -24,6 +25,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/faculty', facultyRoutes);
+app.use('/api/student', studentRoutes);
 
 // Error handling
 app.use(errorHandler);
