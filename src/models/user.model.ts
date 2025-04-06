@@ -6,7 +6,7 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  department?: string;
+  department?: mongoose.Types.ObjectId;
   roles: string[];
   selectedRole?: string;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -33,7 +33,8 @@ const userSchema = new mongoose.Schema<IUser>(
       select: false,
     },
     department: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
       required: false,
     },
     roles: {

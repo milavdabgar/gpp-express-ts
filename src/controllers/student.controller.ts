@@ -226,31 +226,31 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
     .populate('departmentId', 'name');
 
   const fields = [
-    'enrollmentNo',
-    'userId.name',
-    'userId.email',
-    'departmentId.name',
-    'batch',
-    'semester',
-    'status',
-    'admissionDate'
+    { label: 'Enrollment No', value: 'enrollmentNo' },
+    { label: 'Name', value: 'name' },
+    { label: 'Email', value: 'email' },
+    { label: 'Department', value: 'department' },
+    { label: 'Batch', value: 'batch' },
+    { label: 'Semester', value: 'semester' },
+    { label: 'Status', value: 'status' },
+    { label: 'Admission Date', value: 'admissionDate' }
   ];
 
   // Convert students to plain objects with proper type handling
   const studentsData = students.map(student => {
     const plainStudent = student.toObject();
     return {
-      enrollmentNo: plainStudent.enrollmentNo,
-      'userId.name': plainStudent.userId && typeof plainStudent.userId === 'object' ? 
+      enrollmentNo: plainStudent.enrollmentNo || '',
+      name: plainStudent.userId && typeof plainStudent.userId === 'object' ? 
         (plainStudent.userId as any).name : '',
-      'userId.email': plainStudent.userId && typeof plainStudent.userId === 'object' ? 
+      email: plainStudent.userId && typeof plainStudent.userId === 'object' ? 
         (plainStudent.userId as any).email : '',
-      'departmentId.name': plainStudent.departmentId && typeof plainStudent.departmentId === 'object' ? 
+      department: plainStudent.departmentId && typeof plainStudent.departmentId === 'object' ? 
         (plainStudent.departmentId as any).name : '',
-      batch: plainStudent.batch,
-      semester: plainStudent.semester,
-      status: plainStudent.status,
-      admissionDate: plainStudent.admissionDate
+      batch: plainStudent.batch || '',
+      semester: plainStudent.semester || '',
+      status: plainStudent.status || '',
+      admissionDate: plainStudent.admissionDate ? new Date(plainStudent.admissionDate).toISOString().split('T')[0] : ''
     };
   });
 
@@ -279,32 +279,38 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
   });
 
   const students = [];
+  const errors = [];
 
   for (const row of results) {
     try {
-      // Find or create department
-      let department = await DepartmentModel.findOne({ name: row.department });
+      // Map friendly column names to actual data
+      const studentData = {
+        name: row['Name'] || row.name,
+        email: row['Email'] || row.email,
+        department: row['Department'] || row.department,
+        enrollmentNo: row['Enrollment No'] || row.enrollmentNo,
+        batch: row['Batch'] || row.batch,
+        semester: row['Semester'] || row.semester,
+        status: row['Status'] || row.status || 'active',
+        admissionDate: row['Admission Date'] || row.admissionDate || new Date().toISOString()
+      };
+
+      // Find department by name
+      const department = await DepartmentModel.findOne({ 
+        name: { $regex: new RegExp(`^${studentData.department}$`, 'i') }
+      });
+      
       if (!department) {
-        department = await DepartmentModel.findOne({ _id: row.departmentId });
-        if (!department) {
-          console.log(`Skipping student with department ${row.department || row.departmentId} as it doesn't exist`);
-          continue;
-        }
+        errors.push(`Skipping student ${studentData.name}: Department '${studentData.department}' not found`);
+        continue;
       }
 
       // Create or update user
-      let user;
-      const existingUser = await UserModel.findOne({ email: row.email });
-      if (existingUser) {
-        user = existingUser;
-        if (!user.roles.includes('student')) {
-          user.roles.push('student');
-          await user.save();
-        }
-      } else {
+      let user = await UserModel.findOne({ email: studentData.email });
+      if (!user) {
         user = await UserModel.create({
-          name: row.name,
-          email: row.email,
+          name: studentData.name,
+          email: studentData.email,
           password: 'Student@123', // Default password
           department: department._id,
           roles: ['student'],
@@ -313,9 +319,12 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
       }
 
       // Check if student with enrollment number already exists
-      const existingStudent = await StudentModel.findOne({ enrollmentNo: row.enrollmentNo });
+      const existingStudent = await StudentModel.findOne({ 
+        enrollmentNo: studentData.enrollmentNo 
+      });
+      
       if (existingStudent) {
-        console.log(`Skipping student with enrollment number ${row.enrollmentNo} as it already exists`);
+        errors.push(`Skipping student ${studentData.name}: Enrollment number '${studentData.enrollmentNo}' already exists`);
         continue;
       }
 
@@ -323,24 +332,24 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
       const student = await StudentModel.create({
         userId: user._id,
         departmentId: department._id,
-        enrollmentNo: row.enrollmentNo,
-        semester: parseInt(row.semester) || 1,
-        batch: row.batch || '2022-2025',
-        admissionDate: row.admissionDate || new Date(),
-        status: row.status || 'active',
+        enrollmentNo: studentData.enrollmentNo,
+        semester: parseInt(studentData.semester) || 1,
+        batch: studentData.batch,
+        admissionDate: new Date(studentData.admissionDate),
+        status: studentData.status,
         guardian: {
-          name: row.guardianName || '',
-          relation: row.guardianRelation || '',
-          contact: row.guardianContact || '',
-          occupation: row.guardianOccupation || ''
+          name: row['Guardian Name'] || '',
+          relation: row['Guardian Relation'] || '',
+          contact: row['Guardian Contact'] || '',
+          occupation: row['Guardian Occupation'] || ''
         },
         contact: {
-          mobile: row.mobile || '',
-          email: row.email || '',
-          address: row.address || '',
-          city: row.city || '',
-          state: row.state || '',
-          pincode: row.pincode || ''
+          mobile: row['Mobile'] || '',
+          email: studentData.email,
+          address: row['Address'] || '',
+          city: row['City'] || '',
+          state: row['State'] || '',
+          pincode: row['Pincode'] || ''
         }
       });
 
@@ -351,12 +360,16 @@ export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) 
 
       students.push(populatedStudent);
     } catch (error) {
-      console.error(`Error creating student entry:`, error);
+      errors.push(`Error creating student ${row['Name'] || row.name}: ${error.message}`);
     }
   }
 
   res.status(201).json({
     status: 'success',
-    data: { students }
+    data: { 
+      students,
+      errors,
+      summary: `Successfully imported ${students.length} students. ${errors.length} errors encountered.`
+    }
   });
 });

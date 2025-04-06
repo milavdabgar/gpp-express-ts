@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserModel } from '../models/user.model';
+import { DepartmentModel } from '../models/department.model';
 import { AppError } from '../middleware/error.middleware';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
@@ -110,54 +111,78 @@ export const importUsers = async (req: Request & { file?: Express.Multer.File },
       return next(new AppError('Please upload a CSV file', 400));
     }
 
-    const csvRows: any[] = [];
+    const results: any[] = [];
     const stream = Readable.from(req.file.buffer.toString());
 
     await new Promise((resolve, reject) => {
       stream
         .pipe(csv())
-        .on('data', (data) => csvRows.push(data))
+        .on('data', (data) => results.push(data))
         .on('end', resolve)
         .on('error', reject);
     });
 
-    const users = await Promise.all(
-      csvRows.map(async (row) => {
-        const hashedPassword = await bcrypt.hash(row.password || 'ChangeMe@123', 12);
-        return {
-          name: row.name,
-          email: row.email,
-          password: hashedPassword,
-          department: row.department,
-          roles: row.roles?.split(',').map((role: string) => role.trim()) || ['student'],
-          selectedRole: row.roles?.split(',')[0].trim() || 'student'
+    const users = [];
+    const errors = [];
+
+    for (const row of results) {
+      try {
+        // Map friendly column names to actual data
+        const userData = {
+          name: row['Name'] || row.name,
+          email: row['Email'] || row.email,
+          department: row['Department'] || row.department,
+          roles: row['Roles'] || row.roles,
+          selectedRole: row['Selected Role'] || row.selectedRole || 'faculty'
         };
-      })
-    );
 
-    // Process each user individually to handle duplicates
-    const importResults = await Promise.all(
-      users.map(async (user) => {
-        try {
-          // Try to update existing user or create new one
-          const updatedUser = await UserModel.findOneAndUpdate(
-            { email: user.email },
-            user,
-            { upsert: true, new: true }
-          );
-          return { success: true, user: updatedUser };
-        } catch (error) {
-          return { success: false, email: user.email, error };
+        // Find department by name
+        const department = await DepartmentModel.findOne({ 
+          name: { $regex: new RegExp(`^${userData.department}$`, 'i') }
+        });
+        
+        if (!department) {
+          errors.push(`Skipping user ${userData.name}: Department '${userData.department}' not found`);
+          continue;
         }
-      })
-    );
 
-    const successful = importResults.filter(r => r.success).length;
-    const failed = importResults.filter(r => !r.success).length;
+        // Check if user with email already exists
+        const existingUser = await UserModel.findOne({ email: userData.email });
+        if (existingUser) {
+          errors.push(`Skipping user ${userData.name}: Email '${userData.email}' already exists`);
+          continue;
+        }
 
-    res.status(200).json({
+        // Parse roles from CSV
+        const roles = userData.roles
+          ? userData.roles.split(',').map((role: string) => role.trim())
+          : ['faculty'];
+
+        // Create user
+        const hashedPassword = await bcrypt.hash('User@123', 12);
+        const user = await UserModel.create({
+          name: userData.name,
+          email: userData.email,
+          password: hashedPassword,
+          department: department._id,
+          roles: roles,
+          selectedRole: userData.selectedRole
+        });
+
+        const populatedUser = await user.populate('department', 'name');
+        users.push(populatedUser);
+      } catch (error) {
+        errors.push(`Error creating user ${row['Name'] || row.name}: ${error.message}`);
+      }
+    }
+
+    res.status(201).json({
       status: 'success',
-      message: `${successful} users imported/updated successfully, ${failed} failed`
+      data: { 
+        users,
+        errors,
+        summary: `Successfully imported ${users.length} users. ${errors.length} errors encountered.`
+      }
     });
   } catch (error) {
     next(error);
@@ -166,11 +191,38 @@ export const importUsers = async (req: Request & { file?: Express.Multer.File },
 
 export const exportUsers = async (_: Request, res: Response, next: NextFunction) => {
   try {
-    const users = await UserModel.find().select('-password -__v');
+    const users = await UserModel.find()
+      .select('-password -__v')
+      .populate({
+        path: 'department',
+        model: 'Department',
+        select: 'name'
+      });
     
-    const fields = ['name', 'email', 'department', 'roles', 'selectedRole', 'createdAt'];
+    const fields = [
+      { label: 'Name', value: 'name' },
+      { label: 'Email', value: 'email' },
+      { label: 'Department', value: 'departmentName' },
+      { label: 'Roles', value: 'rolesString' },
+      { label: 'Selected Role', value: 'selectedRole' },
+      { label: 'Created At', value: 'createdAtFormatted' }
+    ];
+
+    const usersData = users.map(user => {
+      const plainUser = user.toObject();
+      const dept = plainUser.department as unknown as { name: string } | null;
+      return {
+        name: plainUser.name || '',
+        email: plainUser.email || '',
+        departmentName: dept?.name || '',
+        rolesString: (plainUser.roles || []).join(', '),
+        selectedRole: plainUser.selectedRole || '',
+        createdAtFormatted: new Date().toISOString().split('T')[0]
+      };
+    });
+
     const json2csvParser = new Parser({ fields });
-    const csv = json2csvParser.parse(users);
+    const csv = json2csvParser.parse(usersData);
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=users.csv');
