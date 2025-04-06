@@ -13,22 +13,22 @@ const studentSchema = new mongoose.Schema({
   },
   enrollmentNo: {
     type: String,
-    required: [true, 'Enrollment number is required'],
+    sparse: true,
     unique: true
   },
   batch: {
     type: String,
-    required: [true, 'Batch year is required']
+    default: ''
   },
   semester: {
     type: Number,
-    required: [true, 'Semester is required'],
+    default: 1,
     min: 1,
     max: 8
   },
   admissionDate: {
     type: Date,
-    required: [true, 'Admission date is required']
+    default: Date.now
   },
   status: {
     type: String,

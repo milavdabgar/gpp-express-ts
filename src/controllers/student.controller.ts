@@ -9,6 +9,72 @@ import { Parser } from 'json2csv';
 import { Readable } from 'stream';
 import bcrypt from 'bcryptjs';
 
+// Helper function to sync a single user
+export const syncStudentUser = async (user: any) => {
+  // Only sync if user has student role
+  if (!user.roles.includes('student')) {
+    return null;
+  }
+
+  // Check if student record already exists
+  const existingStudent = await StudentModel.findOne({ userId: user._id });
+  if (existingStudent) {
+    return existingStudent;
+  }
+
+  // Get current year for enrollment number
+  const currentYear = new Date().getFullYear();
+  
+  // Get the last enrollment number for this year
+  const lastStudent = await StudentModel.findOne(
+    { enrollmentNo: new RegExp(`^${currentYear}`) },
+    { enrollmentNo: 1 },
+    { sort: { enrollmentNo: -1 } }
+  );
+
+  // Generate next enrollment number
+  const counter = lastStudent?.enrollmentNo
+    ? parseInt(lastStudent.enrollmentNo.substring(4)) + 1
+    : 1;
+  const enrollmentNo = `${currentYear}${counter.toString().padStart(4, '0')}`;
+
+  // Create new student record
+  return StudentModel.create({
+    userId: user._id,
+    departmentId: user.department,
+    enrollmentNo,
+    batch: `${currentYear}-${currentYear + 4}`,
+    status: 'active'
+  });
+};
+
+// Sync all users with student role
+export const syncStudentUsers = catchAsync(async (_req: Request, res: Response) => {
+  // Get all users with student role
+  const users = await UserModel.find({ roles: 'student' });
+  const results = { created: 0, existing: 0, errors: [] as string[] };
+
+  for (const user of users) {
+    try {
+      const student = await syncStudentUser(user);
+      if (student) {
+        if (student.isNew) {
+          results.created++;
+        } else {
+          results.existing++;
+        }
+      }
+    } catch (error) {
+      results.errors.push(`Error creating student for user ${user.name}: ${(error as Error).message}`);
+    }
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: results,
+  });
+});
+
 // Get all students
 export const getAllStudents = catchAsync(async (_req: Request, res: Response) => {
   const students = await StudentModel.find({ userId: { $ne: null } })

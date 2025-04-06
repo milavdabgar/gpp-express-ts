@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { UserModel, IUser } from '../models/user.model';
 import { AppError } from '../middleware/error.middleware';
+import { syncStudentUser } from './student.controller';
 
 const signToken = (id: string, selectedRole: string) => {
   const secret = process.env.JWT_SECRET;
@@ -46,6 +47,11 @@ export const signup = async (
       roles: req.body.roles || ['student'],
       selectedRole: req.body.selectedRole,
     });
+
+    // If user has student role, create student record
+    if (newUser.roles.includes('student')) {
+      await syncStudentUser(newUser);
+    }
 
     createSendToken(newUser, 201, res);
   } catch (error) {
@@ -116,14 +122,17 @@ export const switchRole = async (
 
     // 2) Check if user has the requested role
     if (!user.roles.includes(role)) {
-      return next(new AppError('You do not have permission for this role', 403));
+      return next(new AppError('Invalid role selected', 400));
     }
 
-    // 3) Update selected role
     user.selectedRole = role;
     await user.save({ validateBeforeSave: false });
 
-    // 4) Generate new token with updated role
+    // If switching to student role, ensure student record exists
+    if (role === 'student') {
+      await syncStudentUser(user);
+    }
+
     createSendToken(user, 200, res);
   } catch (error) {
     next(error);

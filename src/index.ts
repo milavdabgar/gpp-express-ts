@@ -25,7 +25,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/faculty', facultyRoutes);
-app.use('/api/student', studentRoutes);
+app.use('/api/students', studentRoutes);
 
 // Error handling
 app.use(errorHandler);
