@@ -1,6 +1,10 @@
 import express from 'express';
+import multer from 'multer';
 import * as departmentController from '../controllers/department.controller';
 import { protect, restrictTo } from '../middleware/auth.middleware';
+
+// Configure multer for memory storage
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
@@ -14,6 +18,15 @@ router
   .route('/')
   .get(departmentController.getAllDepartments)
   .post(departmentController.createDepartment);
+
+// CSV Import/Export routes
+router
+  .route('/import')
+  .post(upload.single('file'), departmentController.importDepartments);
+
+router
+  .route('/export')
+  .get(departmentController.exportDepartments);
 
 router
   .route('/stats')
