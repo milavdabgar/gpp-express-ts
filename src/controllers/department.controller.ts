@@ -64,8 +64,8 @@ export const createDepartment = catchAsync(async (req: Request, res: Response) =
 
 // Update department
 export const updateDepartment = catchAsync(async (req: Request, res: Response) => {
-  // If hodId is being updated, verify that user exists and has appropriate role
-  if (req.body.hodId) {
+  // If hodId is being updated and not empty, verify that user exists and has appropriate role
+  if (req.body.hodId && req.body.hodId.trim() !== '') {
     const user = await UserModel.findById(req.body.hodId);
     if (!user) {
       throw new AppError('No user found with that ID', 404);
@@ -74,6 +74,9 @@ export const updateDepartment = catchAsync(async (req: Request, res: Response) =
     if (!user.roles.includes('hod')) {
       throw new AppError('User must have HOD role to be assigned as department head', 400);
     }
+  } else if (req.body.hodId === '') {
+    // If hodId is empty string, set it to null
+    req.body.hodId = null;
   }
 
   const department = await DepartmentModel.findByIdAndUpdate(
