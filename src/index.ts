@@ -54,7 +54,7 @@ app.use((_req, res) => {
 });
 
 // Connect to MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gpp-portal';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gpp-portal';
 const PORT = process.env.PORT || 9000;
 
 mongoose
