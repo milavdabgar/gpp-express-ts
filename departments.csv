@@ -1,3 +1,7 @@
 Name,Code,Description,EstablishedDate,IsActive
 EC,11,GPP EC,2025-04-07,true
+IT,16,Department of Information Technology,2020-01-01,true
+Mechanical,19,Department of Mechanical Engineering,2020-01-01,true
+Civil,06,Department of Civil Engineering,2020-01-01,true
+Electrical,09,Electrical Engineering,2025-04-07,true
 ICT,32,GPP ICT,2025-04-07,true
