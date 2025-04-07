@@ -97,7 +97,7 @@ export const createTeam = catchAsync(async (req: Request, res: Response) => {
   }
 
   // Automatically add the current user to the team if not already included
-  let teamMembers = [...members];
+  const teamMembers = [...members];
   
   // Check if current user is already in the team
   const currentUserIndex = teamMembers.findIndex(member => 

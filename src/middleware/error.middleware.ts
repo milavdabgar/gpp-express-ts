@@ -20,7 +20,7 @@ export const errorHandler = (
   _req: Request,
   res: Response,
   _next: NextFunction
-) => {
+): Response => {
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       status: err.status,

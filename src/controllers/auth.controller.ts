@@ -4,7 +4,7 @@ import { UserModel, IUser } from '../models/user.model';
 import { AppError } from '../middleware/error.middleware';
 import { syncStudentUser } from './student.controller';
 
-const signToken = (id: string, selectedRole: string) => {
+const signToken = (id: string, selectedRole: string): string => {
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {
@@ -17,7 +17,7 @@ const signToken = (id: string, selectedRole: string) => {
   );
 };
 
-const createSendToken = (user: IUser, statusCode: number, res: Response) => {
+const createSendToken = (user: IUser, statusCode: number, res: Response): void => {
   const token = signToken(user._id.toString(), user.selectedRole!);
 
   // Remove password from output
@@ -37,7 +37,7 @@ export const signup = async (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   try {
     const newUser = await UserModel.create({
       name: req.body.name,
@@ -63,7 +63,7 @@ export const login = async (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   try {
     const { email, password, selectedRole } = req.body;
 
@@ -101,7 +101,7 @@ export const switchRole = async (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   try {
     const { role } = req.body;
 

@@ -19,7 +19,7 @@ export const protect = async (
   req: Request,
   _res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   try {
     // 1) Get token from header
     const authHeader = req.headers.authorization;
@@ -55,7 +55,7 @@ export const protect = async (
 };
 
 export const restrictTo = (...roles: string[]) => {
-  return (req: Request, _res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     if (!roles.includes(req.role!)) {
       return next(
         new AppError('You do not have permission to perform this action', 403)

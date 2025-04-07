@@ -1210,7 +1210,7 @@ export const generateProjectCertificates = catchAsync(async (req: Request, res: 
   }
 
   // Build query based on certificate type
-  let query: any = { eventId };
+  const query: any = { eventId };
   
   if (certificateType === 'department-winners') {
     query['deptEvaluation.completed'] = true;
