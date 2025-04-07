@@ -8,7 +8,6 @@ import { AppError } from '../middleware/error.middleware';
 import { Parser } from 'json2csv';
 import { Readable } from 'stream';
 import csv from 'csv-parser';
-import mongoose from 'mongoose';
 
 // Get all locations
 export const getAllLocations = catchAsync(async (req: Request, res: Response) => {

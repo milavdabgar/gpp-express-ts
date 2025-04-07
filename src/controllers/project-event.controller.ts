@@ -10,7 +10,7 @@ import csv from 'csv-parser';
 import mongoose from 'mongoose';
 
 // Get all events
-export const getAllEvents = catchAsync(async (req: Request, res: Response) => {
+export const getAllEvents = catchAsync(async (_req: Request, res: Response) => {
   const events = await ProjectEventModel.find()
     .populate('departments', 'name code')
     .sort({ eventDate: -1 });
@@ -24,7 +24,7 @@ export const getAllEvents = catchAsync(async (req: Request, res: Response) => {
 });
 
 // Get active events (isActive = true)
-export const getActiveEvents = catchAsync(async (req: Request, res: Response) => {
+export const getActiveEvents = catchAsync(async (_req: Request, res: Response) => {
   const events = await ProjectEventModel.find({ isActive: true })
     .populate('departments', 'name code')
     .sort({ eventDate: 1 });
@@ -292,7 +292,7 @@ export const updateEventSchedule = catchAsync(async (req: Request, res: Response
 });
 
 // Export events to CSV
-export const exportEventsToCsv = catchAsync(async (req: Request, res: Response) => {
+export const exportEventsToCsv = catchAsync(async (_req: Request, res: Response) => {
   const events = await ProjectEventModel.find()
     .populate('departments', 'name')
     .sort({ eventDate: -1 });
@@ -422,7 +422,7 @@ export const importEventsFromCsv = catchAsync(async (req: Request, res: Response
               activity: match[2].trim(),
               location: match[3].trim(),
               coordinator: {
-                userId: req.user._id,
+                userId: req.user?._id || 'TBA',
                 name: 'TBA'
               },
               notes: ''
@@ -433,7 +433,7 @@ export const importEventsFromCsv = catchAsync(async (req: Request, res: Response
               activity: item,
               location: 'TBA',
               coordinator: {
-                userId: req.user._id,
+                userId: req.user?._id || 'TBA',
                 name: 'TBA'
               },
               notes: ''

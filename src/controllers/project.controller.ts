@@ -746,7 +746,7 @@ export const importProjectsFromCsv = catchAsync(async (req: Request, res: Respon
           department: department._id,
           contactNumber: row['Guide Contact'] || '0000000000'
         },
-        teamId: team._id,
+        teamId: team?._id || null,
         eventId: event._id,
         createdBy: req.user._id,
         updatedBy: req.user._id
@@ -1378,7 +1378,8 @@ export const getEventWinners = catchAsync(async (req: Request, res: Response) =>
   ])
   .sort({ 'centralEvaluation.score': -1 })
   .limit(3)
-  .map((project, index) => ({
+  const winners = await instituteWinners;
+  const rankedWinners = winners.map((project, index) => ({
     ...project.toObject(),
     rank: index + 1
   }));
@@ -1387,7 +1388,7 @@ export const getEventWinners = catchAsync(async (req: Request, res: Response) =>
     status: 'success',
     data: {
       departmentWinners,
-      instituteWinners
+      instituteWinners: rankedWinners
     }
   });
 });

@@ -193,7 +193,7 @@ export const updateTeam = catchAsync(async (req: Request, res: Response) => {
 
   // Ensure at least one leader in the team
   if (members) {
-    const hasLeader = members.some(member => member.isLeader);
+    const hasLeader = members.some((member: { isLeader: boolean }) => member.isLeader);
     if (!hasLeader) {
       throw new AppError('Team must have at least one leader', 400);
     }
@@ -633,7 +633,7 @@ export const getTeamMembers = catchAsync(async (req: Request, res: Response) => 
       const student = await StudentModel.findOne({ userId: member.userId });
       
       return {
-        ...member.toObject(),
+        ...(member instanceof mongoose.Document ? member.toObject() : member),
         userDetails: user,
         studentDetails: student
       };
@@ -705,7 +705,7 @@ export const addTeamMember = catchAsync(async (req: Request, res: Response) => {
   };
 
   team.members.push(newMember);
-  team.updatedBy = req.user._id;
+  team.updatedBy = new mongoose.Types.ObjectId(req.user._id);
   
   await team.save();
 
@@ -757,7 +757,7 @@ export const removeTeamMember = catchAsync(async (req: Request, res: Response) =
 
   // Remove member from team
   team.members = team.members.filter(member => member.userId.toString() !== userId);
-  team.updatedBy = req.user._id;
+  team.updatedBy = new mongoose.Types.ObjectId(req.user._id);
   
   await team.save();
 
@@ -802,12 +802,12 @@ export const setTeamLeader = catchAsync(async (req: Request, res: Response) => {
 
   // Update team members: set the specified member as leader and others as non-leaders
   team.members = team.members.map(member => ({
-    ...member.toObject(),
+    ...member,
     isLeader: member.userId.toString() === userId,
     role: member.userId.toString() === userId ? 'Team Leader' : member.role
   }));
   
-  team.updatedBy = req.user._id;
+  team.updatedBy = new mongoose.Types.ObjectId(req.user._id);
   await team.save();
 
   res.status(200).json({

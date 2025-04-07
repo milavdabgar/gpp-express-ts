@@ -8,12 +8,10 @@ interface JwtPayload {
   selectedRole: string;
 }
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: IUser;
-      role?: string;
-    }
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: IUser;
+    role?: string;
   }
 }
 
