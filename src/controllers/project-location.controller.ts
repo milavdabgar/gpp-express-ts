@@ -11,6 +11,9 @@ import csv from 'csv-parser';
 
 // Get all locations
 export const getAllLocations = catchAsync(async (req: Request, res: Response) => {
+  if (!req.user) {
+    throw new AppError('You must be logged in to view locations', 401);
+  }
   const { department, eventId, section, isAssigned } = req.query;
 
   // Build query based on provided filters
@@ -33,7 +36,9 @@ export const getAllLocations = catchAsync(async (req: Request, res: Response) =>
     .populate([
       { path: 'department', select: 'name code' },
       { path: 'eventId', select: 'name eventDate' },
-      { path: 'projectId', select: 'title teamId' }
+      { path: 'project', select: 'title teamId' },
+      { path: 'createdBy', select: 'name' },
+      { path: 'updatedBy', select: 'name' }
     ])
     .sort({ section: 1, position: 1 })
     .skip(skip)

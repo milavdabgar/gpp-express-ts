@@ -77,8 +77,8 @@ projectLocationSchema.index({ isAssigned: 1 });
 // Virtual for accessing the associated project
 projectLocationSchema.virtual('project', {
   ref: 'Project',
-  localField: '_id',
-  foreignField: 'locationId',
+  localField: 'projectId',
+  foreignField: '_id',
   justOne: true,
 });
 
