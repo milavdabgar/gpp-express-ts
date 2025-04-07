@@ -5,7 +5,7 @@ import { UserModel } from '../models/user.model';
 // Load environment variables
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gpp-portal';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gpp-portal';
 
 async function createAdmin() {
   try {
