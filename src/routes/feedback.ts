@@ -372,7 +372,7 @@ toc: true
 
     const { execSync } = require('child_process');
     try {
-        execSync('pandoc -s -o feedback_report_wkhtml.pdf --pdf-engine=wkhtmltopdf --pdf-engine-opt=--enable-local-file-access --toc -N --shift-heading-level-by=-1 temp_report.md', {
+        execSync('pandoc -s -o feedback_report_wkhtml.pdf --pdf-engine=wkhtmltopdf --pdf-engine-opt=--enable-local-file-access --css=src/public/css/github.css --toc -N --shift-heading-level-by=-1 temp_report.md', {
             stdio: 'inherit'
         });
     } finally {
@@ -407,7 +407,18 @@ toc: true
 };
 
 const generatePDFWithPuppeteer = async (markdownContent: string): Promise<void> => {
-    const htmlContent = await Promise.resolve(marked(markdownContent));
+    const fs = require('fs');
+    const css = fs.readFileSync('src/public/css/github.css', 'utf8');
+    const htmlContent = `
+        <html>
+        <head>
+            <style>${css}</style>
+        </head>
+        <body class="markdown-body">
+            ${await Promise.resolve(marked(markdownContent))}
+        </body>
+        </html>
+    `;
     const browser = await puppeteer.launch();
     try {
         const page = await browser.newPage();
