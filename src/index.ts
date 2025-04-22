@@ -9,7 +9,8 @@ import departmentRoutes from './routes/department.routes';
 import facultyRoutes from './routes/faculty.routes';
 import studentRoutes from './routes/student.routes';
 import resultRoutes from './routes/result.routes';
-import projectRoutes from './routes/project.routes'; // Add project routes
+import projectRoutes from './routes/project.routes';
+import feedbackRoutes from './routes/feedback';
 import { errorHandler } from './middleware/error.middleware';
 
 // Load environment variables
@@ -18,7 +19,11 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000', // React app URL
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json({ limit: '10mb' })); // Increased limit for file uploads
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -30,7 +35,8 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/faculty', facultyRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/results', resultRoutes);
-app.use('/api/projects', projectRoutes); // Add project routes
+app.use('/api/projects', projectRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
