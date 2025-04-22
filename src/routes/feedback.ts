@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import * as csv from 'fast-csv';
 import ExcelJS from 'exceljs';
 import { marked } from 'marked';
-import puppeteer from 'puppeteer';
+
 import archiver from 'archiver';
 
 const router = express.Router();
@@ -282,10 +282,18 @@ const generateMarkdownReport = (result: AnalysisResult): string => {
     
     // Create a map of subject scores by faculty
     const subjectScoresByFaculty = new Map<string, Map<string, number>>();
+    const subjectShortForms = new Map<string, { code: string; shortForm: string }>();
+
     result.subject_scores.forEach(subject => {
-        const key = `${subject.Subject_Code}-${subject.Subject_FullName}`;
+        const shortForm = subject.Subject_FullName.split(' ')
+            .filter((word: string) => !['of', 'and', 'in', 'to', 'the', 'for', '&', 'a', 'an'].includes(word.toLowerCase()))
+            .map((word: string) => word[0])
+            .join('');
+
+        const key = `${subject.Subject_Code}-${shortForm}`;
         if (!subjectScoresByFaculty.has(key)) {
             subjectScoresByFaculty.set(key, new Map());
+            subjectShortForms.set(key, { code: subject.Subject_Code, shortForm });
         }
         const facultyInitial = getFacultyInitial(subject.Faculty_Name);
         subjectScoresByFaculty.get(key)?.set(facultyInitial, subject.Score);
@@ -305,19 +313,20 @@ const generateMarkdownReport = (result: AnalysisResult): string => {
     });
 
     // Generate the table header
-    report += `| Subject | ${facultyInitials.join(' | ')} | Subject Overall |\n`;
-    report += `|---------|${Array.from({ length: facultyInitials.length + 1 }, () => '------').join('|')}|\n`;
+    report += `| Subject Code | Subject | ${facultyInitials.join(' | ')} | Subject Overall |\n`;
+    report += `|-------------|---------|${Array.from({ length: facultyInitials.length + 1 }, () => '------').join('|')}|\n`;
 
     // Add subject rows
     Array.from(subjectScoresByFaculty.entries()).forEach(([subject, scores]) => {
-        report += `| ${subject} | ${facultyInitials.map(fi => {
+        const { code, shortForm } = subjectShortForms.get(subject) || { code: '', shortForm: '' };
+        report += `| ${code} | ${shortForm} | ${facultyInitials.map(fi => {
             const score = scores.get(fi);
             return score ? formatFloat(score) : '-';
         }).join(' | ')} | ${formatFloat(subjectOverallScores.get(subject) || 0)} |\n`;
     });
 
     // Add faculty overall row
-    report += `| Faculty Overall | ${facultyInitials.map(fi => formatFloat(facultyOverallScores.get(fi) || 0)).join(' | ')} | - |\n`;
+    report += `| Faculty Overall | - | ${facultyInitials.map(fi => formatFloat(facultyOverallScores.get(fi) || 0)).join(' | ')} | - |\n`;
 
     return report;
 };
@@ -343,19 +352,33 @@ const generateExcelReport = async (analysis: AnalysisResult, originalData: strin
     await workbook.xlsx.writeFile('feedback_report.xlsx');
 };
 
-const generatePDF = (htmlContent: string): Promise<void> => {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const browser = await puppeteer.launch();
-            const page = await browser.newPage();
-            await page.setContent(htmlContent);
-            await page.pdf({ path: 'feedback_report.pdf', format: 'A4' });
-            await browser.close();
-            resolve();
-        } catch (error) {
-            reject(error);
-        }
-    });
+const generatePDF = async (markdownContent: string): Promise<void> => {
+    const yamlFrontMatter = `---
+title: Student Feedback Analysis Report
+subtitle: EC Dept, Government Polytechnic Palanpur
+margin-left: 2cm
+margin-right: 2cm
+margin-top: 2cm
+margin-bottom: 2cm
+toc: true
+---
+`;
+
+    // Write markdown with YAML front matter to temp file
+    const fs = require('fs');
+    const tempFile = 'temp_report.md';
+    fs.writeFileSync(tempFile, yamlFrontMatter + markdownContent);
+
+    // Run pandoc to generate PDF
+    const { execSync } = require('child_process');
+    try {
+        execSync('pandoc -s -o feedback_report.pdf --pdf-engine=wkhtmltopdf --pdf-engine-opt=--enable-local-file-access --toc -N --shift-heading-level-by=-1 temp_report.md', {
+            stdio: 'inherit'
+        });
+    } finally {
+        // Clean up temp file
+        fs.unlinkSync(tempFile);
+    }
 };
 
 function calculateSubjectScores(data: FeedbackData[]): any[] {
