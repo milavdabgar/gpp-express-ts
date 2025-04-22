@@ -128,8 +128,106 @@ const generateMarkdownReport = (result: AnalysisResult): string => {
 
     let report = `# Student Feedback Analysis Report\n\n`;
 
-    // Add branch analysis
-    report += `## Branch Analysis\n\n`;
+    // Add Assessment Parameters & Rating Scale
+    report += `## Assessment Parameters & Rating Scale\n\n`;
+    report += `### Assessment Parameters\n\n`;
+    report += `- **Q1 Syllabus Coverage**: Has the Teacher covered the entire syllabus as prescribed by University/College/Board?\n`;
+    report += `- **Q2 Topics Beyond Syllabus**: Has the Teacher covered relevant topics beyond the syllabus?\n`;
+    report += `- **Q3 Pace of Teaching**: Pace at which contents were covered?\n`;
+    report += `- **Q4 Practical Demo**: Support for the development of student's skill (Practical demonstration)\n`;
+    report += `- **Q5 Hands-on Training**: Support for the development of student's skill (Hands-on training)\n`;
+    report += `- **Q6 Technical Skills of Teacher**: Effectiveness of Teacher in terms of: Technical skills\n`;
+    report += `- **Q7 Communication Skills of Teacher**: Effectiveness of Teacher in terms of: Communication skills\n`;
+    report += `- **Q8 Doubt Clarification**: Clarity of expectations of students\n`;
+    report += `- **Q9 Use of Teaching Tools**: Effectiveness of Teacher in terms of: Use of teaching aids\n`;
+    report += `- **Q10 Motivation**: Motivation and inspiration for students to learn\n`;
+    report += `- **Q11 Helpfulness of Teacher**: Willingness to offer help and advice to students\n`;
+    report += `- **Q12 Student Progress Feedback**: Feedback provided on student's progress\n\n`;
+
+    report += `### Rating Scale\n\n`;
+    report += `| Rating | Description |\n`;
+    report += `|--------|-------------|`;
+    report += `\n| 1      | Very Poor   |`;
+    report += `\n| 2      | Poor        |`;
+    report += `\n| 3      | Average     |`;
+    report += `\n| 4      | Good        |`;
+    report += `\n| 5      | Very Good   |\n\n`;
+
+    report += `## Feedback Analysis\n\n`;
+
+    // Add branch analysis (overall)
+    report += `### Branch Analysis (overall)\n\n`;
+    report += `| Branch | Score |\n`;
+    report += `|--------|--------|\n`;
+    result.branch_scores.forEach(branch => {
+        report += `| ${branch.Branch} | ${formatFloat(branch.Score)} |\n`;
+    });
+    report += `\n`;
+
+    // Add term-year analysis (overall)
+    report += `### Term-Year Analysis (overall)\n\n`;
+    report += `**Term duration:**\n`;
+    report += `- Semester 2: 24/01/25,10/05/25\n`;
+    report += `- Semester 4 & 6: 18/12/24,28/04/25\n\n`;
+    report += `| Year | Term | Score |\n`;
+    report += `|------|------|--------|\n`;
+    result.term_year_scores.forEach(ty => {
+        report += `| ${ty.Year} | ${ty.Term} | ${formatFloat(ty.Score)} |\n`;
+    });
+    report += `\n`;
+
+    // Add semester analysis (overall)
+    report += `### Semester Analysis (overall)\n\n`;
+    report += `| Branch | Sem | Score |\n`;
+    report += `|--------|-----|--------|\n`;
+    result.semester_scores.forEach(sem => {
+        report += `| ${sem.Branch} | ${sem.Sem} | ${formatFloat(sem.Score)} |\n`;
+    });
+    report += `\n`;
+
+    // Add subject analysis (overall)
+    report += `### Subject Analysis (overall)\n\n`;
+    report += `| Subject Code | Subject Short Form | Subject Full Name | Score |\n`;
+    report += `|--------------|-------------------|------------------|--------|\n`;
+    const subjectScores = new Map<string, { code: string; shortForm: string; fullName: string; scores: number[] }>();
+    result.subject_scores.forEach(subject => {
+        const key = subject.Subject_Code;
+        if (!subjectScores.has(key)) {
+            subjectScores.set(key, {
+                code: subject.Subject_Code,
+                shortForm: subject.Subject_FullName.split(' ')
+                    .filter((word: string) => !['of', 'and', 'in', 'to', 'the', 'for', '&', 'a', 'an'].includes(word.toLowerCase()))
+                    .map((word: string) => word[0])
+                    .join(''),
+                fullName: subject.Subject_FullName,
+                scores: []
+            });
+        }
+        const subjectData = subjectScores.get(key);
+        if (subjectData) {
+            subjectData.scores.push(subject.Score);
+        }
+    });
+    Array.from(subjectScores.values()).forEach(subject => {
+        const avgScore = subject.scores.reduce((a, b) => a + b, 0) / subject.scores.length;
+        report += `| ${subject.code} | ${subject.shortForm} | ${subject.fullName} | ${formatFloat(avgScore)} |\n`;
+    });
+    report += `\n`;
+
+    // Add faculty analysis (overall)
+    report += `### Faculty Analysis (Overall)\n\n`;
+    report += `| Faculty Name | Faculty Initial | Score |\n`;
+    report += `|--------------|----------------|--------|\n`;
+    result.faculty_scores.forEach(faculty => {
+        report += `| ${faculty.Faculty_Name} | ${faculty.Faculty_Initial} | ${formatFloat(faculty.Score)} |\n`;
+    });
+    report += `\n`;
+
+    // Add parameter-wise analysis
+    report += `## Parameter-wise Feedback Analysis\n\n`;
+
+    // Add branch analysis (parameter-wise)
+    report += `### Branch Analysis (Parameter-wise)\n\n`;
     report += `| Branch | ${Array.from({ length: 12 }, (_, i) => `Q${i + 1}`).join(' | ')} | Score |\n`;
     report += `|--------|${Array.from({ length: 13 }, () => '------').join('|')}|\n`;
     result.branch_scores.forEach(branch => {
@@ -137,8 +235,8 @@ const generateMarkdownReport = (result: AnalysisResult): string => {
     });
     report += `\n`;
 
-    // Add term-year analysis
-    report += `## Term-Year Analysis\n\n`;
+    // Add term-year analysis (parameter-wise)
+    report += `### Term-Year Analysis (Parameter-wise)\n\n`;
     report += `| Year | Term | ${Array.from({ length: 12 }, (_, i) => `Q${i + 1}`).join(' | ')} | Score |\n`;
     report += `|------|------|${Array.from({ length: 13 }, () => '------').join('|')}|\n`;
     result.term_year_scores.forEach(ty => {
@@ -146,8 +244,8 @@ const generateMarkdownReport = (result: AnalysisResult): string => {
     });
     report += `\n`;
 
-    // Add semester analysis
-    report += `## Semester Analysis\n\n`;
+    // Add semester analysis (parameter-wise)
+    report += `### Semester Analysis (Parameter-wise)\n\n`;
     report += `| Branch | Sem | ${Array.from({ length: 12 }, (_, i) => `Q${i + 1}`).join(' | ')} | Score |\n`;
     report += `|--------|-----|${Array.from({ length: 13 }, () => '------').join('|')}|\n`;
     result.semester_scores.forEach(sem => {
@@ -155,17 +253,33 @@ const generateMarkdownReport = (result: AnalysisResult): string => {
     });
     report += `\n`;
 
-    // Add faculty analysis
-    report += `## Faculty Analysis\n\n`;
-    report += `| Faculty | ${Array.from({ length: 12 }, (_, i) => `Q${i + 1}`).join(' | ')} | Score |\n`;
-    report += `|---------|${Array.from({ length: 13 }, () => '------').join('|')}|\n`;
+    // Add subject analysis (parameter-wise)
+    report += `### Subject Analysis (Parameter-wise)\n\n`;
+    report += `| Subject Code | Subject Short Form | Faculty Initial | ${Array.from({ length: 12 }, (_, i) => `Q${i + 1}`).join(' | ')} | Score |\n`;
+    report += `|--------------|-------------------|----------------|${Array.from({ length: 13 }, () => '------').join('|')}|\n`;
+    result.subject_scores.forEach(subject => {
+        const shortForm = subject.Subject_FullName.split(' ')
+            .filter((word: string) => !['of', 'and', 'in', 'to', 'the', 'for', '&', 'a', 'an'].includes(word.toLowerCase()))
+            .map((word: string) => word[0])
+            .join('');
+        report += `| ${subject.Subject_Code} | ${shortForm} | ${getFacultyInitial(subject.Faculty_Name)} | ${Array.from({ length: 12 }, (_, i) => formatFloat(subject[`Q${i + 1}`])).join(' | ')} | ${formatFloat(subject.Score)} |\n`;
+    });
+    report += `\n`;
+
+    // Add faculty analysis (parameter-wise)
+    report += `### Faculty Analysis (Parameter-wise)\n\n`;
+    report += `| Faculty Initial | ${Array.from({ length: 12 }, (_, i) => `Q${i + 1}`).join(' | ')} | Score |\n`;
+    report += `|----------------|${Array.from({ length: 13 }, () => '------').join('|')}|\n`;
     result.faculty_scores.forEach(faculty => {
         report += `| ${faculty.Faculty_Initial} | ${Array.from({ length: 12 }, (_, i) => formatFloat(faculty[`Q${i + 1}`])).join(' | ')} | ${formatFloat(faculty.Score)} |\n`;
     });
     report += `\n`;
 
-    // Add correlation matrix
-    report += `## Faculty-Subject Correlation Matrix\n\n`;
+    // Add misc feedback analysis
+    report += `## Misc Feedback Analysis\n\n`;
+
+    // Add faculty-subject correlation matrix
+    report += `### Faculty-Subject Correlation Matrix\n\n`;
     const facultyInitials = result.faculty_scores.map(f => f.Faculty_Initial);
     report += `| Subject | ${facultyInitials.join(' | ')} |\n`;
     report += `|---------|${Array.from({ length: facultyInitials.length }, () => '------').join('|')}|\n`;
