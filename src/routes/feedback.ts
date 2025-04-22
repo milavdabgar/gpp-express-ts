@@ -6,6 +6,8 @@ import ExcelJS from 'exceljs';
 import { marked } from 'marked';
 
 import archiver from 'archiver';
+import puppeteer from 'puppeteer';
+import fs from 'fs';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -42,45 +44,29 @@ router.get('/sample', (_req: Request, res: Response) => {
 });
 
 router.post('/analyze', upload.single('file'), async (req: Request, res: Response) => {
-    try {
-        if (!req.file) {
-            res.status(400).json({ error: 'No file uploaded' });
-            return;
-        }
+    if (!req.file) {
+        res.status(400).json({ error: 'No file uploaded' });
+        return;
+    }
 
+    try {
         const fileContent = req.file.buffer.toString();
-        
-        // Early return for empty file
-        if (!fileContent) {
-            res.status(400).json({ error: 'Empty file uploaded' });
-            return;
-        }
-        
         const feedbackData: FeedbackData[] = [];
-        
-        await new Promise((resolve, reject) => {
+
+        // Parse CSV data
+        await new Promise<void>((resolve, reject) => {
             csv.parseString(fileContent, { headers: true })
                 .on('data', (row: FeedbackData) => feedbackData.push(row))
                 .on('error', reject)
-                .on('end', resolve);
+                .on('end', () => resolve());
         });
 
-        // Calculate subject-wise scores
+        // Calculate all scores
         const subjectScores = calculateSubjectScores(feedbackData);
-        
-        // Calculate faculty-wise scores
         const facultyScores = calculateFacultyScores(subjectScores);
-        
-        // Calculate semester-wise scores
         const semesterScores = calculateSemesterScores(feedbackData);
-
-        // Calculate branch scores
         const branchScores = calculateBranchScores(feedbackData);
-
-        // Calculate term-year scores
         const termYearScores = calculateTermYearScores(feedbackData);
-
-        // Calculate correlation matrix
         const correlationMatrix = calculateCorrelationMatrix(subjectScores, facultyScores);
 
         const analysisResult: AnalysisResult = {
@@ -95,23 +81,39 @@ router.post('/analyze', upload.single('file'), async (req: Request, res: Respons
         // Generate reports
         const markdownReport = generateMarkdownReport(analysisResult);
         await generateExcelReport(analysisResult, fileContent);
-        await generatePDF(await marked(markdownReport));
+        const htmlContent = await marked(markdownReport);
+        const generatedPDFs = await generatePDF(htmlContent);
 
-        // Create zip archive
+        // Create ZIP archive
         const archive = archiver('zip', { zlib: { level: 9 } });
+        const output = fs.createWriteStream('feedback_reports.zip');
+
+        output.on('close', () => {
+            res.download('feedback_reports.zip', () => {
+                // Clean up files after sending
+                fs.unlinkSync('feedback_reports.zip');
+                fs.unlinkSync('feedback_report.xlsx');
+                generatedPDFs.forEach(pdf => {
+                    try {
+                        fs.unlinkSync(pdf);
+                    } catch (error) {
+                        console.error(`Error deleting ${pdf}:`, error);
+                    }
+                });
+            });
+        });
+
+        archive.pipe(output);
         archive.append(markdownReport, { name: 'feedback_report.md' });
         archive.file('feedback_report.xlsx', { name: 'feedback_report.xlsx' });
-        archive.file('feedback_report.pdf', { name: 'feedback_report.pdf' });
-        
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', 'attachment; filename=feedback_reports.zip');
-        archive.pipe(res);
+        generatedPDFs.forEach(pdf => {
+            archive.file(pdf, { name: pdf });
+        });
         await archive.finalize();
 
     } catch (error) {
         console.error('Error processing feedback:', error);
-        res.status(500).json({ error: 'Error processing feedback data' });
-        return;
+        res.status(500).json({ error: 'Error processing feedback' });
     }
 });
 
@@ -352,7 +354,7 @@ const generateExcelReport = async (analysis: AnalysisResult, originalData: strin
     await workbook.xlsx.writeFile('feedback_report.xlsx');
 };
 
-const generatePDF = async (markdownContent: string): Promise<void> => {
+const generatePDFWithWkhtml = async (markdownContent: string): Promise<void> => {
     const yamlFrontMatter = `---
 title: Student Feedback Analysis Report
 subtitle: EC Dept, Government Polytechnic Palanpur
@@ -364,21 +366,102 @@ toc: true
 ---
 `;
 
-    // Write markdown with YAML front matter to temp file
     const fs = require('fs');
     const tempFile = 'temp_report.md';
     fs.writeFileSync(tempFile, yamlFrontMatter + markdownContent);
 
-    // Run pandoc to generate PDF
     const { execSync } = require('child_process');
     try {
-        execSync('pandoc -s -o feedback_report.pdf --pdf-engine=wkhtmltopdf --pdf-engine-opt=--enable-local-file-access --toc -N --shift-heading-level-by=-1 temp_report.md', {
+        execSync('pandoc -s -o feedback_report_wkhtml.pdf --pdf-engine=wkhtmltopdf --pdf-engine-opt=--enable-local-file-access --toc -N --shift-heading-level-by=-1 temp_report.md', {
             stdio: 'inherit'
         });
     } finally {
-        // Clean up temp file
         fs.unlinkSync(tempFile);
     }
+};
+
+const generatePDFWithLatex = async (markdownContent: string): Promise<void> => {
+    const yamlFrontMatter = `---
+title: Student Feedback Analysis Report
+subtitle: EC Dept, Government Polytechnic Palanpur
+margin-left: 2.5cm
+margin-right: 2.5cm
+margin-top: 2cm
+margin-bottom: 2cm
+toc: true
+---
+`;
+
+    const fs = require('fs');
+    const tempFile = 'temp_report.md';
+    fs.writeFileSync(tempFile, yamlFrontMatter + markdownContent);
+
+    const { execSync } = require('child_process');
+    try {
+        execSync('pandoc -s -o feedback_report_latex.pdf --pdf-engine=xelatex -N --shift-heading-level-by=-1 temp_report.md', {
+            stdio: 'inherit'
+        });
+    } finally {
+        fs.unlinkSync(tempFile);
+    }
+};
+
+const generatePDFWithPuppeteer = async (markdownContent: string): Promise<void> => {
+    const htmlContent = await Promise.resolve(marked(markdownContent));
+    const browser = await puppeteer.launch();
+    try {
+        const page = await browser.newPage();
+        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        await page.pdf({
+            path: 'feedback_report_puppeteer.pdf',
+            format: 'A4',
+            margin: {
+                top: '2cm',
+                right: '2cm',
+                bottom: '2cm',
+                left: '2cm'
+            }
+        });
+    } finally {
+        await browser.close();
+    }
+};
+
+const generatePDF = async (markdownContent: string): Promise<string[]> => {
+    const successfulPDFs: string[] = [];
+
+    // Try wkhtmltopdf
+    try {
+        await generatePDFWithWkhtml(markdownContent);
+        successfulPDFs.push('feedback_report_wkhtml.pdf');
+        console.log('Successfully generated PDF with wkhtmltopdf');
+    } catch (error) {
+        console.error('Error generating PDF with wkhtmltopdf:', error);
+    }
+
+    // Try latex
+    try {
+        await generatePDFWithLatex(markdownContent);
+        successfulPDFs.push('feedback_report_latex.pdf');
+        console.log('Successfully generated PDF with latex');
+    } catch (error) {
+        console.error('Error generating PDF with latex:', error);
+    }
+
+    // Try puppeteer
+    try {
+        await generatePDFWithPuppeteer(markdownContent);
+        successfulPDFs.push('feedback_report_puppeteer.pdf');
+        console.log('Successfully generated PDF with puppeteer');
+    } catch (error) {
+        console.error('Error generating PDF with puppeteer:', error);
+    }
+
+    if (successfulPDFs.length === 0) {
+        throw new Error('All PDF generation methods failed');
+    }
+
+    return successfulPDFs;
 };
 
 function calculateSubjectScores(data: FeedbackData[]): any[] {
