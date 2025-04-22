@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Feedback Analysis Report</title>
+    <link rel="stylesheet" href="/css/github.css">
+    <link rel="stylesheet" href="/css/report.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="report-container">
+        <div class="report-header">
+            <h1>Student Feedback Analysis Report</h1>
+            <h2>EC Dept, Government Polytechnic Palanpur</h2>
+        </div>
+
+        <h2>Assessment Parameters & Rating Scale</h2>
+        <div class="grid">
+            <div class="chart-container">
+                <h3 class="chart-title">Branch-wise Performance</h3>
+                <canvas id="branchChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Faculty Performance</h3>
+                <canvas id="facultyChart"></canvas>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="chart-container">
+                <h3 class="chart-title">Subject Performance</h3>
+                <canvas id="subjectChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Parameter-wise Analysis</h3>
+                <canvas id="parameterChart"></canvas>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="chart-container">
+                <h3 class="chart-title">Semester-wise Performance</h3>
+                <canvas id="semesterChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Term-Year Analysis</h3>
+                <canvas id="termYearChart"></canvas>
+            </div>
+        </div>
+
+        <div class="download-section">
+            <h3>Download Reports</h3>
+            <a href="/feedback/download/wkhtml" class="btn">Download PDF (wkhtmltopdf)</a>
+            <a href="/feedback/download/latex" class="btn">Download PDF (LaTeX)</a>
+            <a href="/feedback/download/puppeteer" class="btn">Download PDF (Puppeteer)</a>
+            <a href="/feedback/download/excel" class="btn">Download Excel</a>
+        </div>
+    </div>
+
+    <script>
+        const data = <%- JSON.stringify(analysisResult) %>;
+        
+        // Branch Performance Chart
+        new Chart(document.getElementById('branchChart'), {
+            type: 'bar',
+            data: {
+                labels: data.branch_scores.map(b => b.Branch),
+                datasets: [{
+                    label: 'Overall Score',
+                    data: data.branch_scores.map(b => b.Score),
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 5
+                    }
+                }
+            }
+        });
+
+        // Faculty Performance Chart
+        new Chart(document.getElementById('facultyChart'), {
+            type: 'radar',
+            data: {
+                labels: Array.from({length: 12}, (_, i) => `Q${i+1}`),
+                datasets: data.faculty_scores.map(f => ({
+                    label: f.Faculty_Initial,
+                    data: Array.from({length: 12}, (_, i) => f[`Q${i+1}`]),
+                    fill: true,
+                    backgroundColor: `rgba(${Math.random()*255}, ${Math.random()*255}, ${Math.random()*255}, 0.2)`,
+                    borderColor: `rgba(${Math.random()*255}, ${Math.random()*255}, ${Math.random()*255}, 1)`
+                }))
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    r: {
+                        min: 0,
+                        max: 5
+                    }
+                }
+            }
+        });
+
+        // Subject Performance Chart
+        new Chart(document.getElementById('subjectChart'), {
+            type: 'bar',
+            data: {
+                labels: data.subject_scores.map(s => s.Subject_ShortForm || s.Subject_Code),
+                datasets: [{
+                    label: 'Overall Score',
+                    data: data.subject_scores.map(s => s.Score),
+                    backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 5
+                    }
+                }
+            }
+        });
+
+        // Parameter-wise Analysis Chart
+        new Chart(document.getElementById('parameterChart'), {
+            type: 'line',
+            data: {
+                labels: Array.from({length: 12}, (_, i) => `Q${i+1}`),
+                datasets: [{
+                    label: 'Average Score',
+                    data: Array.from({length: 12}, (_, i) => {
+                        const scores = data.subject_scores.map(s => s[`Q${i+1}`]);
+                        return scores.reduce((a, b) => a + b, 0) / scores.length;
+                    }),
+                    fill: false,
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 5
+                    }
+                }
+            }
+        });
+
+        // Semester Performance Chart
+        new Chart(document.getElementById('semesterChart'), {
+            type: 'bar',
+            data: {
+                labels: data.semester_scores.map(s => `${s.Branch} Sem ${s.Sem}`),
+                datasets: [{
+                    label: 'Overall Score',
+                    data: data.semester_scores.map(s => 
+                        Object.keys(s)
+                            .filter(k => k.startsWith('Q'))
+                            .reduce((acc, k) => acc + s[k], 0) / 12
+                    ),
+                    backgroundColor: 'rgba(255, 159, 64, 0.5)',
+                    borderColor: 'rgba(255, 159, 64, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 5
+                    }
+                }
+            }
+        });
+
+        // Term-Year Analysis Chart
+        new Chart(document.getElementById('termYearChart'), {
+            type: 'line',
+            data: {
+                labels: data.term_year_scores.map(t => `${t.Year} ${t.Term}`),
+                datasets: [{
+                    label: 'Overall Score',
+                    data: data.term_year_scores.map(t => 
+                        Object.keys(t)
+                            .filter(k => k.startsWith('Q'))
+                            .reduce((acc, k) => acc + t[k], 0) / 12
+                    ),
+                    fill: false,
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 5
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

@@ -43,6 +43,73 @@ router.get('/sample', (_req: Request, res: Response) => {
     res.send(sampleData);
 });
 
+// Store analysis results in memory (in a real app, use a database)
+const analysisResults = new Map<string, any>();
+
+router.get('/report/:id', async (req: Request, res: Response) => {
+    try {
+        const result = analysisResults.get(req.params.id);
+        if (!result) {
+            return res.status(404).json({ error: 'Report not found' });
+        }
+        return res.json(result);
+    } catch (error) {
+        console.error('Error rendering report:', error);
+        return res.status(500).json({ error: 'Error rendering report' });
+    }
+});
+
+router.get('/download/:type', async (req: Request, res: Response): Promise<void> => {
+    const type = req.params.type;
+    let filename;
+    let contentType;
+    
+    switch (type) {
+        case 'wkhtml':
+            filename = 'feedback_report_wkhtml.pdf';
+            contentType = 'application/pdf';
+            break;
+        case 'latex':
+            filename = 'feedback_report_latex.pdf';
+            contentType = 'application/pdf';
+            break;
+        case 'puppeteer':
+            filename = 'feedback_report_puppeteer.pdf';
+            contentType = 'application/pdf';
+            break;
+        case 'excel':
+            filename = 'feedback_report.xlsx';
+            contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            break;
+        default:
+            res.status(400).send('Invalid download type');
+            return;
+    }
+    
+    try {
+        if (!fs.existsSync(filename)) {
+            throw new Error(`Report file not found: ${filename}`);
+        }
+
+        // Send file with proper content type
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+
+        const fileStream = fs.createReadStream(filename);
+        fileStream.on('error', (error) => {
+            console.error(`Error streaming file ${filename}:`, error);
+            if (!res.headersSent) {
+                res.status(500).send(`Error streaming file: ${error.message}`);
+            }
+        });
+
+        fileStream.pipe(res);
+    } catch (error) {
+        console.error(`Error downloading ${type} report:`, error);
+        res.status(500).send(`Failed to download ${type} report: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+});
+
 router.post('/analyze', upload.single('file'), async (req: Request, res: Response) => {
     if (!req.file) {
         res.status(400).json({ error: 'No file uploaded' });
@@ -84,23 +151,43 @@ router.post('/analyze', upload.single('file'), async (req: Request, res: Respons
         const htmlContent = await marked(markdownReport);
         const generatedPDFs = await generatePDF(htmlContent);
 
+        // Store the analysis result
+        const resultId = Date.now().toString();
+        analysisResults.set(resultId, analysisResult);
+
         // Create ZIP archive
         const archive = archiver('zip', { zlib: { level: 9 } });
         const output = fs.createWriteStream('feedback_reports.zip');
 
-        output.on('close', () => {
-            res.download('feedback_reports.zip', () => {
-                // Clean up files after sending
-                fs.unlinkSync('feedback_reports.zip');
-                fs.unlinkSync('feedback_report.xlsx');
-                generatedPDFs.forEach(pdf => {
-                    try {
-                        fs.unlinkSync(pdf);
-                    } catch (error) {
-                        console.error(`Error deleting ${pdf}:`, error);
-                    }
-                });
+        output.on('close', async () => {
+            // Return the report ID and URLs
+            res.json({
+                success: true,
+                reportId: resultId,
+                result: analysisResult
             });
+
+            // Store files for cleanup after 5 minutes
+            const filesToDelete = [
+                'feedback_reports.zip',
+                'feedback_report.xlsx',
+                ...generatedPDFs
+            ];
+
+            // Schedule cleanup after 5 minutes
+            setTimeout(async () => {
+                console.log('Starting delayed file cleanup...');
+                for (const file of filesToDelete) {
+                    try {
+                        if (fs.existsSync(file)) {
+                            fs.unlinkSync(file);
+                            console.log(`Cleaned up ${file}`);
+                        }
+                    } catch (error) {
+                        console.error(`Error cleaning up ${file}:`, error);
+                    }
+                }
+            }, 5 * 60 * 1000); // 5 minutes
         });
 
         archive.pipe(output);
