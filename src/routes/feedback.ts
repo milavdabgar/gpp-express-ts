@@ -116,11 +116,9 @@ router.post('/analyze', upload.single('file'), async (req: Request, res: Respons
 });
 
 const getFacultyInitial = (name: string): string => {
-    return name
-        .split(' ')
-        .slice(2) // Skip 'Mr.'/'Ms.' and middle initial
-        .map(part => part[0])
-        .join('');
+    const parts = name.split(' ');
+    // Skip 'Mr.'/'Ms.' but include all initials
+    return parts.slice(1).map(part => part[0]).join('');
 };
 
 const generateMarkdownReport = (result: AnalysisResult): string => {
@@ -281,11 +279,45 @@ const generateMarkdownReport = (result: AnalysisResult): string => {
     // Add faculty-subject correlation matrix
     report += `### Faculty-Subject Correlation Matrix\n\n`;
     const facultyInitials = result.faculty_scores.map(f => f.Faculty_Initial);
-    report += `| Subject | ${facultyInitials.join(' | ')} |\n`;
-    report += `|---------|${Array.from({ length: facultyInitials.length }, () => '------').join('|')}|\n`;
-    Object.entries(result.correlation_matrix).forEach(([subject, scores]) => {
-        report += `| ${subject} | ${facultyInitials.map(fi => formatFloat((scores as { [key: string]: number })[fi] || 0)).join(' | ')} |\n`;
+    
+    // Create a map of subject scores by faculty
+    const subjectScoresByFaculty = new Map<string, Map<string, number>>();
+    result.subject_scores.forEach(subject => {
+        const key = `${subject.Subject_Code}-${subject.Subject_FullName}`;
+        if (!subjectScoresByFaculty.has(key)) {
+            subjectScoresByFaculty.set(key, new Map());
+        }
+        const facultyInitial = getFacultyInitial(subject.Faculty_Name);
+        subjectScoresByFaculty.get(key)?.set(facultyInitial, subject.Score);
     });
+
+    // Calculate faculty overall scores
+    const facultyOverallScores = new Map<string, number>();
+    result.faculty_scores.forEach(faculty => {
+        facultyOverallScores.set(faculty.Faculty_Initial, faculty.Score);
+    });
+
+    // Calculate subject overall scores
+    const subjectOverallScores = new Map<string, number>();
+    Array.from(subjectScoresByFaculty.entries()).forEach(([subject, scores]) => {
+        const avgScore = Array.from(scores.values()).reduce((a, b) => a + b, 0) / scores.size;
+        subjectOverallScores.set(subject, avgScore);
+    });
+
+    // Generate the table header
+    report += `| Subject | ${facultyInitials.join(' | ')} | Subject Overall |\n`;
+    report += `|---------|${Array.from({ length: facultyInitials.length + 1 }, () => '------').join('|')}|\n`;
+
+    // Add subject rows
+    Array.from(subjectScoresByFaculty.entries()).forEach(([subject, scores]) => {
+        report += `| ${subject} | ${facultyInitials.map(fi => {
+            const score = scores.get(fi);
+            return score ? formatFloat(score) : '-';
+        }).join(' | ')} | ${formatFloat(subjectOverallScores.get(subject) || 0)} |\n`;
+    });
+
+    // Add faculty overall row
+    report += `| Faculty Overall | ${facultyInitials.map(fi => formatFloat(facultyOverallScores.get(fi) || 0)).join(' | ')} | - |\n`;
 
     return report;
 };
