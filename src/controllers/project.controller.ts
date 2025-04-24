@@ -792,7 +792,7 @@ export const getProjectStatistics = catchAsync(async (req: Request, res: Respons
     matchQuery.eventId = new mongoose.Types.ObjectId(eventId);
   }
 
-  // Aggregate projects by department with evaluation stats
+  // Get department-wise stats
   const departmentStats = await ProjectModel.aggregate([
     { $match: matchQuery },
     {
@@ -807,147 +807,96 @@ export const getProjectStatistics = catchAsync(async (req: Request, res: Respons
     {
       $group: {
         _id: '$department',
-        departmentName: { $first: '$departmentInfo.name' },
-        departmentCode: { $first: '$departmentInfo.code' },
-        totalProjects: { $sum: 1 },
-        deptEvaluatedCount: {
-          $sum: { $cond: [{ $eq: ['$deptEvaluation.completed', true] }, 1, 0] }
-        },
-        centralEvaluatedCount: {
-          $sum: { $cond: [{ $eq: ['$centralEvaluation.completed', true] }, 1, 0] }
-        },
-        avgDeptScore: { $avg: '$deptEvaluation.score' },
-        avgCentralScore: { $avg: '$centralEvaluation.score' },
-        projectsByStatus: {
-          $push: {
-            status: '$status',
-            id: '$_id'
+        name: { $first: '$departmentInfo.name' },
+        code: { $first: '$departmentInfo.code' },
+        total: { $sum: 1 },
+        evaluated: {
+          $sum: { 
+            $cond: [
+              { $or: [
+                { $eq: ['$deptEvaluation.completed', true] },
+                { $eq: ['$centralEvaluation.completed', true] }
+              ]}, 
+              1, 
+              0
+            ] 
           }
         },
-        projectsByCategory: {
-          $push: {
-            category: '$category',
-            id: '$_id'
-          }
-        }
-      }
-    },
-    {
-      $addFields: {
-        deptEvaluationPercentage: {
-          $multiply: [{ $divide: ['$deptEvaluatedCount', '$totalProjects'] }, 100]
-        },
-        centralEvaluationPercentage: {
-          $multiply: [{ $divide: ['$centralEvaluatedCount', '$totalProjects'] }, 100]
-        }
-      }
-    },
-    {
-      $project: {
-        _id: 1,
-        departmentName: 1,
-        departmentCode: 1,
-        totalProjects: 1,
-        deptEvaluatedCount: 1,
-        centralEvaluatedCount: 1,
-        deptEvaluationPercentage: 1,
-        centralEvaluationPercentage: 1,
-        avgDeptScore: 1,
-        avgCentralScore: 1,
-        statusBreakdown: {
-          $reduce: {
-            input: '$projectsByStatus',
-            initialValue: {},
-            in: {
-              $mergeObjects: [
-                '$$value',
-                {
-                  $cond: {
-                    if: { $not: ['$$value.$$this.status'] },
-                    then: {
-                      $literal: {
-                        $concat: ['$$this.status', 'Count']
-                      }
-                    },
-                    else: '$$value'
-                  }
-                }
-              ]
-            }
-          }
-        },
-        categoryBreakdown: {
-          $reduce: {
-            input: '$projectsByCategory',
-            initialValue: {},
-            in: {
-              $mergeObjects: [
-                '$$value',
-                {
-                  $cond: {
-                    if: { $not: ['$$value.$$this.category'] },
-                    then: {
-                      $literal: {
-                        $concat: ['$$this.category', 'Count']
-                      }
-                    },
-                    else: '$$value'
-                  }
-                }
-              ]
-            }
+        avgScore: {
+          $avg: {
+            $cond: [
+              { $eq: ['$deptEvaluation.completed', true] },
+              '$deptEvaluation.score',
+              '$centralEvaluation.score'
+            ]
           }
         }
       }
-    },
-    { $sort: { totalProjects: -1 } }
+    }
   ]);
 
-// Continuation of Project Controller...
-
-// Get overall statistics - continued from previous part
-const overallStats = await ProjectModel.aggregate([
-  { $match: matchQuery },
-  {
-    $group: {
-      _id: null,
-      totalProjects: { $sum: 1 },
-      deptEvaluatedCount: {
-        $sum: { $cond: [{ $eq: ['$deptEvaluation.completed', true] }, 1, 0] }
-      },
-      centralEvaluatedCount: {
-        $sum: { $cond: [{ $eq: ['$centralEvaluation.completed', true] }, 1, 0] }
-      },
-      avgDeptScore: { $avg: '$deptEvaluation.score' },
-      avgCentralScore: { $avg: '$centralEvaluation.score' },
-      departmentCount: { $addToSet: '$department' },
-      categoryCount: { $addToSet: '$category' },
-      statusCounts: {
-        $push: '$status'
+  // Get overall stats
+  const overallStats = await ProjectModel.aggregate([
+    { $match: matchQuery },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        evaluated: {
+          $sum: { 
+            $cond: [
+              { $or: [
+                { $eq: ['$deptEvaluation.completed', true] },
+                { $eq: ['$centralEvaluation.completed', true] }
+              ]}, 
+              1, 
+              0
+            ] 
+          }
+        },
+        pending: {
+          $sum: { 
+            $cond: [
+              { $and: [
+                { $ne: ['$deptEvaluation.completed', true] },
+                { $ne: ['$centralEvaluation.completed', true] }
+              ]}, 
+              1, 
+              0
+            ] 
+          }
+        },
+        avgScore: {
+          $avg: {
+            $cond: [
+              { $eq: ['$deptEvaluation.completed', true] },
+              '$deptEvaluation.score',
+              '$centralEvaluation.score'
+            ]
+          }
+        }
       }
     }
-  },
-  {
-    $addFields: {
-      departmentCount: { $size: '$departmentCount' },
-      categoryCount: { $size: '$categoryCount' },
-      deptEvaluationPercentage: {
-        $multiply: [{ $divide: ['$deptEvaluatedCount', '$totalProjects'] }, 100]
-      },
-      centralEvaluationPercentage: {
-        $multiply: [{ $divide: ['$centralEvaluatedCount', '$totalProjects'] }, 100]
-      }
-    }
-  }
-]);
+  ]);
 
-res.status(200).json({
-  status: 'success',
-  data: {
-    departmentStats,
-    overallStats: overallStats[0] || null
-  }
-});
+  // Format department stats as a record
+  const departmentWise: Record<string, number> = {};
+  departmentStats.forEach(dept => {
+    departmentWise[dept.name] = dept.total;
+  });
+
+  const stats = {
+    total: overallStats[0]?.total || 0,
+    evaluated: overallStats[0]?.evaluated || 0,
+    pending: overallStats[0]?.pending || 0,
+    averageScore: overallStats[0]?.avgScore || 0,
+    departmentWise
+  };
+
+  res.status(200).json({
+    status: 'success',
+    data: stats
+  });
 });
 
 // Export project dummy data from frontend to CSV
