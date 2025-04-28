@@ -447,12 +447,14 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
           continue;
         }
 
+        // Handle the name properly
         const fullName = row.Name?.trim() || '';
         if (!fullName) {
           warnings.push({ row: index + 1, warning: 'Missing student name' });
         }
 
-        const nameParts = fullName.split(' ');
+        // Split name into parts and ensure proper formatting
+        const nameParts = fullName.split(' ').filter((part: string) => part.length > 0);
         const firstName = nameParts[0] || '';
         const lastName = nameParts[nameParts.length - 1] || '';
         const middleName = nameParts.slice(1, -1).join(' ') || '';
@@ -473,37 +475,26 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
           continue;
         }
 
-        const semesterStatus = {
-          sem1: mapSemesterStatus(row.SEM1),
-          sem2: mapSemesterStatus(row.SEM2),
-          sem3: mapSemesterStatus(row.SEM3),
-          sem4: mapSemesterStatus(row.SEM4),
-          sem5: mapSemesterStatus(row.SEM5),
-          sem6: mapSemesterStatus(row.SEM6),
-          sem7: mapSemesterStatus(row.SEM7),
-          sem8: mapSemesterStatus(row.SEM8)
-        };
-
-        const currentSemester = calculateCurrentSemester(semesterStatus);
-        const admissionYear = row.convoyear || parseInt('20' + enrollmentNo.substring(0, 2));
-        const batch = `${admissionYear}-${parseInt(admissionYear) + 4}`;
-
-        // Always use institutional email for user account
+        // Ensure user record has the proper name
         let userId = null;
         let existingUser = await UserModel.findOne({ email: institutionalEmail });
         
         if (existingUser) {
+          // Update existing user's name if it was N/A
+          if (existingUser.name === 'N/A' && fullName) {
+            await UserModel.findByIdAndUpdate(userId, { name: fullName });
+          }
           if (!existingUser.roles.includes('student')) {
             existingUser.roles.push('student');
             await existingUser.save();
           }
           userId = existingUser._id;
         } else {
-          // Create new user with institutional email
+          // Create new user with proper name
           const user = await UserModel.create({
-            name: fullName,
+            name: fullName || 'N/A',  // Only use N/A if name is completely empty
             email: institutionalEmail,
-            password: enrollmentNo, // Use enrollment number as initial password
+            password: enrollmentNo,
             department: department._id,
             roles: ['student'],
             selectedRole: 'student'
@@ -511,7 +502,7 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
           userId = user._id;
         }
 
-        // Create or update student record
+        // Process and store the student
         const student = await StudentModel.findOneAndUpdate(
           { enrollmentNo },
           {
@@ -521,12 +512,12 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
             middleName,
             lastName,
             fullName,
-            personalEmail, // Store personal email as backup
-            institutionalEmail, // Store institutional email as primary
+            personalEmail,
+            institutionalEmail,
             departmentId: department._id,
             contact: {
               mobile: row.Mobile?.trim() || '',
-              email: personalEmail || institutionalEmail, // Use personal email for contact if available
+              email: personalEmail || institutionalEmail,
               address: '',
               city: '',
               state: '',
@@ -535,14 +526,28 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
             gender: row.Gender?.trim() || '',
             category: row.Category?.trim() || 'OPEN',
             aadharNo: row.aadhar?.trim() || '',
-            semesterStatus,
-            semester: currentSemester,
-            batch,
-            status: 'active',
-            isComplete: row.isComplete === 'True',
-            termClose: row.termClose === 'True',
-            isCancel: row.isCancel === 'True',
-            shift: parseInt(row.shift) || 1
+            semesterStatus: {
+              sem1: mapSemesterStatus(row.SEM1),
+              sem2: mapSemesterStatus(row.SEM2),
+              sem3: mapSemesterStatus(row.SEM3),
+              sem4: mapSemesterStatus(row.SEM4),
+              sem5: mapSemesterStatus(row.SEM5),
+              sem6: mapSemesterStatus(row.SEM6),
+              sem7: mapSemesterStatus(row.SEM7),
+              sem8: mapSemesterStatus(row.SEM8)
+            },
+            semester: calculateCurrentSemester({
+              sem1: mapSemesterStatus(row.SEM1),
+              sem2: mapSemesterStatus(row.SEM2),
+              sem3: mapSemesterStatus(row.SEM3),
+              sem4: mapSemesterStatus(row.SEM4),
+              sem5: mapSemesterStatus(row.SEM5),
+              sem6: mapSemesterStatus(row.SEM6),
+              sem7: mapSemesterStatus(row.SEM7),
+              sem8: mapSemesterStatus(row.SEM8)
+            }),
+            batch: `${parseInt('20' + enrollmentNo.substring(0, 2))}-${parseInt('20' + enrollmentNo.substring(0, 2)) + 4}`,
+            status: 'active'
           },
           { upsert: true, new: true }
         );
@@ -556,7 +561,7 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
       }
     }
 
-    res.status(200).json({ 
+    res.status(200).json({
       status: 'success',
       data: {
         results: processedStudents,
@@ -567,6 +572,6 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
     });
   } catch (error) {
     console.error('Error importing students:', error);
-    res.status(500).json({ error: 'Failed to import students' });
+    throw new AppError('Failed to import students', 500);
   }
 });
