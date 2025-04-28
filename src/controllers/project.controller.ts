@@ -1283,8 +1283,9 @@ export const getEventWinners = catchAsync(async (req: Request, res: Response) =>
     throw new AppError('Event not found', 404);
   }
   
-  // Check if results are published
-  if (!event.publishResults) {
+  // Check if results are published or user is admin
+  const isAdmin = req.user?.roles.includes('admin');
+  if (!event.publishResults && !isAdmin) {
     throw new AppError('Results have not been published yet', 403);
   }
 
