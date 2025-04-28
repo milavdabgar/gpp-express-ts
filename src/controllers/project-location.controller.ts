@@ -282,10 +282,10 @@ export const assignProjectToLocation = catchAsync(async (req: Request, res: Resp
     throw new AppError('Project ID is required', 400);
   }
 
-  // Check if location exists
-  const location = await ProjectLocationModel.findById(locationId);
+  // Check if location exists - find by locationId string
+  const location = await ProjectLocationModel.findOne({ locationId });
   if (!location) {
-    throw new AppError('Location not found', 404);
+    throw new AppError(`Location with ID ${locationId} not found. Please ensure you are using the location's string ID (e.g., 'A-01') and not its MongoDB _id.`, 404);
   }
 
   // Check if location is already assigned
@@ -302,7 +302,7 @@ export const assignProjectToLocation = catchAsync(async (req: Request, res: Resp
   // Check if project is already assigned to a different location
   const existingLocation = await ProjectLocationModel.findOne({
     projectId,
-    _id: { $ne: locationId }
+    locationId: { $ne: locationId }
   });
 
   if (existingLocation) {
@@ -311,7 +311,7 @@ export const assignProjectToLocation = catchAsync(async (req: Request, res: Resp
 
   // Update location with project
   const updatedLocation = await ProjectLocationModel.findByIdAndUpdate(
-    locationId,
+    location._id,
     {
       projectId,
       isAssigned: true,
@@ -328,7 +328,7 @@ export const assignProjectToLocation = catchAsync(async (req: Request, res: Resp
   await ProjectModel.findByIdAndUpdate(
     projectId,
     {
-      locationId,
+      locationId: locationId,
       updatedBy: req.user._id
     },
     { new: true }
@@ -350,8 +350,8 @@ export const unassignProjectFromLocation = catchAsync(async (req: Request, res: 
 
   const locationId = req.params.id;
 
-  // Check if location exists
-  const location = await ProjectLocationModel.findById(locationId);
+  // Check if location exists - find by locationId string instead of _id
+  const location = await ProjectLocationModel.findOne({ locationId });
   if (!location) {
     throw new AppError('Location not found', 404);
   }
@@ -366,7 +366,7 @@ export const unassignProjectFromLocation = catchAsync(async (req: Request, res: 
 
   // Update location
   const updatedLocation = await ProjectLocationModel.findByIdAndUpdate(
-    locationId,
+    location._id,
     {
       projectId: null,
       isAssigned: false,

@@ -20,7 +20,7 @@ export interface IProject extends Document {
   };
   teamId: mongoose.Types.ObjectId;
   eventId: mongoose.Types.ObjectId;
-  locationId?: mongoose.Types.ObjectId;
+  locationId?: string;
   deptEvaluation?: {
     completed: boolean;
     score: number;
@@ -116,8 +116,7 @@ const projectSchema = new Schema(
       required: [true, 'Event ID is required'],
     },
     locationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'ProjectLocation',
+      type: String,
     },
     deptEvaluation: {
       completed: {
