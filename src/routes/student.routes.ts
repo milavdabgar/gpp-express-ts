@@ -1,45 +1,29 @@
-import express from 'express';
+import { Router } from 'express';
 import multer from 'multer';
-import {
-  getAllStudents,
-  getStudent,
-  createStudent,
-  updateStudent,
-  deleteStudent,
-  getStudentsByDepartment,
-  uploadStudentsCsv,
-  exportStudentsCsv,
-  syncStudentUsers
-} from '../controllers/student.controller';
-import { protect, restrictTo } from '../middleware/auth.middleware';
+import * as studentController from '../controllers/student.controller';
+import { protect } from '../middleware/auth.middleware';
 
-const router = express.Router();
+const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Protect all routes after this middleware
 router.use(protect);
 
-// Routes restricted to admin, principal, and hod
-router.use(restrictTo('admin', 'principal', 'hod'));
-
-// Student sync endpoint
-router.post('/sync', syncStudentUsers);
-
-// CSV import/export endpoints
-router.get('/export-csv', exportStudentsCsv);
-router.post('/upload-csv', upload.single('file'), uploadStudentsCsv);
-
-// CRUD endpoints
 router.route('/')
-  .get(getAllStudents)
-  .post(createStudent);
+  .get(studentController.getAllStudents)
+  .post(studentController.createStudent);
+
+router.route('/sync')
+  .post(studentController.syncStudentUsers);
+
+router.route('/export-csv')
+  .get(studentController.exportStudentsCsv);
+
+router.route('/upload-csv')
+  .post(upload.single('file'), studentController.importGTUStudents);
 
 router.route('/:id')
-  .get(getStudent)
-  .patch(updateStudent)
-  .delete(deleteStudent);
-
-// Department specific endpoints
-router.get('/department/:departmentId', getStudentsByDepartment);
+  .get(studentController.getStudent)
+  .patch(studentController.updateStudent)
+  .delete(studentController.deleteStudent);
 
 export default router;

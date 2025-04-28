@@ -1,20 +1,56 @@
-import mongoose from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 
-const studentSchema = new mongoose.Schema({
+export interface Student {
+  id: number;
+  enrollmentNo: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  personalEmail: string;
+  institutionalEmail: string;
+  departmentCode: string;
+  admissionYear: number;
+  currentSemester: number;
+  semesterStatus: {
+    sem1: 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED';
+    sem2: 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED';
+    sem3: 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED';
+    sem4: 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED';
+    sem5: 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED';
+    sem6: 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED';
+    sem7: 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED';
+    sem8: 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED';
+  };
+}
+
+const StudentSchema = new Schema({
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: [true, 'A student must be associated with a user']
+    type: Schema.Types.ObjectId,
+    ref: 'User'
   },
   departmentId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Department',
-    required: [true, 'A student must be associated with a department']
+    type: Schema.Types.ObjectId,
+    ref: 'Department'
   },
+  firstName: { type: String },
+  middleName: { type: String },
+  lastName: { type: String },
+  fullName: { type: String },
   enrollmentNo: {
     type: String,
-    sparse: true,
+    required: true,
     unique: true
+  },
+  personalEmail: {
+    type: String,
+    sparse: true,
+    trim: true
+  },
+  institutionalEmail: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true
   },
   batch: {
     type: String,
@@ -25,6 +61,48 @@ const studentSchema = new mongoose.Schema({
     default: 1,
     min: 1,
     max: 8
+  },
+  semesterStatus: {
+    sem1: {
+      type: String,
+      enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
+      default: 'NOT_ATTEMPTED'
+    },
+    sem2: {
+      type: String,
+      enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
+      default: 'NOT_ATTEMPTED'
+    },
+    sem3: {
+      type: String,
+      enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
+      default: 'NOT_ATTEMPTED'
+    },
+    sem4: {
+      type: String,
+      enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
+      default: 'NOT_ATTEMPTED'
+    },
+    sem5: {
+      type: String,
+      enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
+      default: 'NOT_ATTEMPTED'
+    },
+    sem6: {
+      type: String,
+      enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
+      default: 'NOT_ATTEMPTED'
+    },
+    sem7: {
+      type: String,
+      enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
+      default: 'NOT_ATTEMPTED'
+    },
+    sem8: {
+      type: String,
+      enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
+      default: 'NOT_ATTEMPTED'
+    }
   },
   admissionDate: {
     type: Date,
@@ -100,11 +178,26 @@ const studentSchema = new mongoose.Schema({
       type: Number,
       required: true
     }
-  }]
+  }],
+  gender: {
+    type: String,
+    enum: ['M', 'F', 'O'],
+    trim: true
+  },
+  category: {
+    type: String,
+    enum: ['OPEN', 'SC', 'ST', 'SEBC', 'EWS', 'TFWS'],
+    trim: true
+  },
+  aadharNo: {
+    type: String,
+    trim: true,
+    sparse: true
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-export const StudentModel = mongoose.model('Student', studentSchema);
+export const StudentModel = mongoose.model('Student', StudentSchema);

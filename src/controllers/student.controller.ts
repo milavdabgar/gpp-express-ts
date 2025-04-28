@@ -1,13 +1,12 @@
 import { Request, Response } from 'express';
+import { Parser } from 'json2csv';
 import { StudentModel } from '../models/student.model';
 import { UserModel } from '../models/user.model';
 import { DepartmentModel } from '../models/department.model';
 import { AppError } from '../middleware/error.middleware';
 import { catchAsync } from '../utils/catchAsync';
 import csv from 'csv-parser';
-import { Parser } from 'json2csv';
 import { Readable } from 'stream';
-import bcrypt from 'bcryptjs';
 
 // Helper function to sync a single user
 export const syncStudentUser = async (user: any) => {
@@ -76,14 +75,40 @@ export const syncStudentUsers = catchAsync(async (_req: Request, res: Response) 
 });
 
 // Get all students
-export const getAllStudents = catchAsync(async (_req: Request, res: Response) => {
-  const students = await StudentModel.find({ userId: { $ne: null } })
-    .populate('userId', 'name email roles')
-    .populate('departmentId', 'name');
+export const getAllStudents = catchAsync(async (req: Request, res: Response) => {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 100;
+  const skip = (page - 1) * limit;
+
+  const [students, total] = await Promise.all([
+    StudentModel.find()
+      .populate({ 
+        path: 'userId',
+        select: 'name email roles'
+      })
+      .populate({
+        path: 'departmentId',
+        select: 'name'
+      })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    StudentModel.countDocuments()
+  ]);
+
+  const totalPages = Math.ceil(total / limit);
 
   res.status(200).json({
     status: 'success',
-    data: { students }
+    data: {
+      students,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages
+      }
+    }
   });
 });
 
@@ -286,7 +311,6 @@ export const getStudentsByDepartment = catchAsync(async (req: Request, res: Resp
 });
 
 // Export students to CSV
-// Export students to CSV
 export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response) => {
   const students = await StudentModel.find({ userId: { $ne: null } })
     .populate('userId', 'name email roles')
@@ -321,8 +345,10 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
   // Convert students to plain objects with proper type handling
   const studentsData = students.map(student => {
     const plainStudent = student.toObject();
-    const user = plainStudent.userId as unknown as { name: string; email: string } | null;
-    const dept = plainStudent.departmentId as unknown as { name: string } | null;
+
+    // First cast to unknown then to the expected type
+    const user = (plainStudent as any).userId as { name: string; email: string } | null;
+    const dept = (plainStudent as any).departmentId as { name: string } | null;
 
     // Format education background as a string
     const educationStr = plainStudent.educationBackground?.map((edu: any) => 
@@ -339,7 +365,7 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
       semester: plainStudent.semester || '',
       status: plainStudent.status || '',
       admissionDate: plainStudent.admissionDate ? new Date(plainStudent.admissionDate).toISOString().split('T')[0] : '',
-      // Contact Info
+      // Contact Info 
       contact: {
         mobile: plainStudent.contact?.mobile || '',
         email: plainStudent.contact?.email || '',
@@ -368,135 +394,179 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
   res.status(200).send(csv);
 });
 
-export const uploadStudentsCsv = catchAsync(async (req: Request, res: Response) => {
-  if (!req.file) {
-    throw new AppError('Please upload a CSV file', 400);
-  }
-
-  const results: any[] = [];
-  const stream = Readable.from(req.file.buffer.toString());
-
-  await new Promise((resolve, reject) => {
-    stream
-      .pipe(csv())
-      .on('data', (data) => {
-        // Process education background from string to array
-        const educationBackground = data['Education Background'] ? 
-          data['Education Background'].split(';').map((edu: string) => {
-            const [degree, institution, board, percentage, yearOfPassing] = edu.split('|');
-            return {
-              degree: degree?.trim(),
-              institution: institution?.trim(),
-              board: board?.trim(),
-              percentage: parseFloat(percentage) || 0,
-              yearOfPassing: parseInt(yearOfPassing) || new Date().getFullYear()
-            };
-          }) : [];
-
-        results.push({
-          ...data,
-          educationBackground
-        });
-      })
-      .on('end', resolve)
-      .on('error', reject);
-  });
-
-  const students = [];
-  const errors = [];
-
-  for (const row of results) {
-    try {
-      // Map friendly column names to actual data
-      const studentData = {
-        name: row['Name'] || row.name,
-        email: row['Email'] || row.email,
-        department: row['Department'] || row.department,
-        enrollmentNo: row['Enrollment No'] || row.enrollmentNo,
-        batch: row['Batch'] || row.batch,
-        semester: row['Semester'] || row.semester,
-        status: row['Status'] || row.status || 'active',
-        admissionDate: row['Admission Date'] || row.admissionDate || new Date().toISOString().split('T')[0],
-        // Contact Info
-        contact: {
-          mobile: row['Mobile'] || '',
-          email: row['Contact Email'] || row.email,
-          address: row['Address'] || '',
-          city: row['City'] || '',
-          state: row['State'] || '',
-          pincode: row['Pincode'] || ''
-        },
-        // Guardian Info
-        guardian: {
-          name: row['Guardian Name'] || '',
-          relation: row['Guardian Relation'] || '',
-          contact: row['Guardian Contact'] || '',
-          occupation: row['Guardian Occupation'] || ''
-        },
-        // Education Background
-        educationBackground: row.educationBackground || []
-      };
-
-      // Check if user exists
-      let user = await UserModel.findOne({ email: studentData.email });
-
-      if (!user) {
-        // Create new user
-        const password = await bcrypt.hash('Student@123', 12); // Default password
-        user = await UserModel.create({
-          name: studentData.name,
-          email: studentData.email,
-          password,
-          roles: ['student'],
-          selectedRole: 'student'
-        });
-      }
-
-      // Find department by name
-      const department = await DepartmentModel.findOne({ name: studentData.department });
-      if (!department) {
-        throw new Error(`Department ${studentData.department} not found`);
-      }
-
-      // Check if student with enrollment number already exists
-      const existingStudent = await StudentModel.findOne({ 
-        enrollmentNo: studentData.enrollmentNo 
-      });
-      
-      if (existingStudent) {
-        throw new Error(`Enrollment number ${studentData.enrollmentNo} already exists`);
-      }
-
-      // Create student record
-      const student = await StudentModel.create({
-        userId: user._id,
-        departmentId: department._id,
-        enrollmentNo: studentData.enrollmentNo,
-        semester: parseInt(studentData.semester) || 1,
-        batch: studentData.batch,
-        admissionDate: new Date(studentData.admissionDate),
-        status: studentData.status,
-        // Contact Info
-        contact: studentData.contact,
-        // Guardian Info
-        guardian: studentData.guardian,
-        // Education Background
-        educationBackground: studentData.educationBackground
-      });
-
-      students.push(student);
-    } catch (error) {
-      errors.push(`Error creating student: ${(error as Error).message}`);
+// Helper function to get current semester based on semester status
+function calculateCurrentSemester(semesterStatus: any): number {
+  const semesters = [1, 2, 3, 4, 5, 6, 7, 8];
+  for (const sem of semesters.reverse()) {
+    if (semesterStatus[`sem${sem}`] !== 'NOT_ATTEMPTED') {
+      return Math.min(sem + 1, 8);
     }
   }
+  return 1;
+}
 
-  res.status(200).json({
-    status: 'success',
-    data: { 
-      students,
-      errors,
-      totalCreated: students.length,
-      totalErrors: errors.length
+function mapSemesterStatus(value: string): 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTED' {
+  if (!value) return 'NOT_ATTEMPTED';
+  const numValue = parseInt(value);
+  if (isNaN(numValue)) return 'NOT_ATTEMPTED';
+  if (numValue === 2) return 'CLEARED';
+  if (numValue === 1) return 'PENDING';
+  return 'NOT_ATTEMPTED';
+}
+
+export const importGTUStudents = catchAsync(async (req: Request & { file?: Express.Multer.File }, res: Response) => {
+  try {
+    if (!req.file) {
+      throw new AppError('Please upload a CSV file', 400);
     }
-  });
+
+    const results: any[] = [];
+    const stream = Readable.from(req.file.buffer.toString());
+    
+    await new Promise<void>((resolve, reject) => {
+      stream
+        .pipe(csv())
+        .on('data', (data) => results.push(data))
+        .on('end', () => resolve())
+        .on('error', (error) => reject(new Error(`Error parsing CSV: ${error.message}`)));
+    });
+
+    if (results.length === 0) {
+      throw new AppError('CSV file is empty or malformed', 400);
+    }
+
+    const processedStudents = [];
+    const errors: { row: number; error: string }[] = [];
+    const warnings: { row: number; warning: string }[] = [];
+
+    for (const [index, row] of results.entries()) {
+      try {
+        const enrollmentNo = row.map_number?.toString().trim();
+        if (!enrollmentNo) {
+          errors.push({ row: index + 1, error: 'Missing enrollment number' });
+          continue;
+        }
+
+        const fullName = row.Name?.trim() || '';
+        if (!fullName) {
+          warnings.push({ row: index + 1, warning: 'Missing student name' });
+        }
+
+        const nameParts = fullName.split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts[nameParts.length - 1] || '';
+        const middleName = nameParts.slice(1, -1).join(' ') || '';
+
+        // Generate institutional email
+        const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
+        const personalEmail = row.Email?.trim() || '';
+
+        const branchCode = row.BR_CODE?.toString().padStart(2, '0');
+        if (!branchCode) {
+          errors.push({ row: index + 1, error: 'Missing branch code' });
+          continue;
+        }
+
+        const department = await DepartmentModel.findOne({ code: branchCode });
+        if (!department) {
+          warnings.push({ row: index + 1, warning: `Department not found for branch code: ${branchCode}` });
+          continue;
+        }
+
+        const semesterStatus = {
+          sem1: mapSemesterStatus(row.SEM1),
+          sem2: mapSemesterStatus(row.SEM2),
+          sem3: mapSemesterStatus(row.SEM3),
+          sem4: mapSemesterStatus(row.SEM4),
+          sem5: mapSemesterStatus(row.SEM5),
+          sem6: mapSemesterStatus(row.SEM6),
+          sem7: mapSemesterStatus(row.SEM7),
+          sem8: mapSemesterStatus(row.SEM8)
+        };
+
+        const currentSemester = calculateCurrentSemester(semesterStatus);
+        const admissionYear = row.convoyear || parseInt('20' + enrollmentNo.substring(0, 2));
+        const batch = `${admissionYear}-${parseInt(admissionYear) + 4}`;
+
+        // Always use institutional email for user account
+        let userId = null;
+        let existingUser = await UserModel.findOne({ email: institutionalEmail });
+        
+        if (existingUser) {
+          if (!existingUser.roles.includes('student')) {
+            existingUser.roles.push('student');
+            await existingUser.save();
+          }
+          userId = existingUser._id;
+        } else {
+          // Create new user with institutional email
+          const user = await UserModel.create({
+            name: fullName,
+            email: institutionalEmail,
+            password: enrollmentNo, // Use enrollment number as initial password
+            department: department._id,
+            roles: ['student'],
+            selectedRole: 'student'
+          });
+          userId = user._id;
+        }
+
+        // Create or update student record
+        const student = await StudentModel.findOneAndUpdate(
+          { enrollmentNo },
+          {
+            userId,
+            enrollmentNo,
+            firstName,
+            middleName,
+            lastName,
+            fullName,
+            personalEmail, // Store personal email as backup
+            institutionalEmail, // Store institutional email as primary
+            departmentId: department._id,
+            contact: {
+              mobile: row.Mobile?.trim() || '',
+              email: personalEmail || institutionalEmail, // Use personal email for contact if available
+              address: '',
+              city: '',
+              state: '',
+              pincode: ''
+            },
+            gender: row.Gender?.trim() || '',
+            category: row.Category?.trim() || 'OPEN',
+            aadharNo: row.aadhar?.trim() || '',
+            semesterStatus,
+            semester: currentSemester,
+            batch,
+            status: 'active',
+            isComplete: row.isComplete === 'True',
+            termClose: row.termClose === 'True',
+            isCancel: row.isCancel === 'True',
+            shift: parseInt(row.shift) || 1
+          },
+          { upsert: true, new: true }
+        );
+
+        processedStudents.push(student);
+      } catch (error) {
+        errors.push({ 
+          row: index + 1, 
+          error: `Failed to process student: ${(error as Error).message}`
+        });
+      }
+    }
+
+    res.status(200).json({ 
+      status: 'success',
+      data: {
+        results: processedStudents,
+        count: processedStudents.length,
+        errors: errors.length > 0 ? errors : undefined,
+        warnings: warnings.length > 0 ? warnings : undefined
+      }
+    });
+  } catch (error) {
+    console.error('Error importing students:', error);
+    res.status(500).json({ error: 'Failed to import students' });
+  }
 });

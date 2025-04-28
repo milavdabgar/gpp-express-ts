@@ -1,87 +1,92 @@
-
 import { DepartmentModel } from '../models/department.model';
-import { UserModel } from '../models/user.model';
-import { ProjectTeamModel } from '../models/project-team.model';
-import { ProjectEventModel } from '../models/project-event.model';
+import mongoose from 'mongoose';
 
-export const seedData = async () => {
+const connectDB = async () => {
   try {
-    // Create departments
-    const departments = await DepartmentModel.create([
+    await mongoose.connect('mongodb://127.0.0.1:27017/gpp');
+    console.log('Connected to MongoDB');
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    throw error;
+  }
+};
+
+export const seedDepartments = async () => {
+  try {
+    const departments = [
       {
         name: 'Computer Engineering',
-        code: 'CE',
+        code: '06',
         description: 'Department of Computer Engineering',
         establishedDate: new Date('2000-01-01'),
         isActive: true
       },
       {
+        name: 'Civil Engineering', 
+        code: '09',
+        description: 'Department of Civil Engineering',
+        establishedDate: new Date('2000-01-01'),
+        isActive: true
+      },
+      {
         name: 'Electrical Engineering',
-        code: 'EE',
-        description: 'Department of Electrical Engineering',
+        code: '11',
+        description: 'Department of Electrical Engineering', 
+        establishedDate: new Date('2000-01-01'),
+        isActive: true
+      },
+      {
+        name: 'Information Technology',
+        code: '17',
+        description: 'Department of Information Technology',
+        establishedDate: new Date('2000-01-01'),
+        isActive: true
+      },
+      {
+        name: 'Mechanical Engineering',
+        code: '19',
+        description: 'Department of Mechanical Engineering',
+        establishedDate: new Date('2000-01-01'), 
+        isActive: true
+      },
+      {
+        name: 'CTSD',
+        code: '83',
+        description: 'Department of Craft and Technology Skill Development',
         establishedDate: new Date('2000-01-01'),
         isActive: true
       }
-    ]);
+    ];
 
-    // Create users (faculty)
-    const users = await UserModel.create([
-      {
-        name: 'Dr. Sarah Johnson',
-        email: 'sarah.johnson@example.com',
-        role: 'faculty',
-        department: departments[0]._id,
-        contactNumber: '+91 98765 43210',
-        isActive: true
-      },
-      {
-        name: 'Prof. Michael Chen',
-        email: 'michael.chen@example.com',
-        role: 'faculty',
-        department: departments[1]._id,
-        contactNumber: '+91 98765 43211',
-        isActive: true
-      }
-    ]);
+    const results = await Promise.all(
+      departments.map(dept => 
+        DepartmentModel.findOneAndUpdate(
+          { code: dept.code },
+          dept,
+          { upsert: true, new: true }
+        )
+      )
+    );
 
-    // Create project event
-    const event = await ProjectEventModel.create({
-      name: 'Project Fair 2025',
-      description: 'Annual project exhibition showcasing student innovations',
-      startDate: new Date('2025-04-09'),
-      endDate: new Date('2025-04-10'),
-      registrationStartDate: new Date('2025-03-01'),
-      registrationEndDate: new Date('2025-03-31'),
-      isActive: true
-    });
+    console.log('Departments seeded successfully');
+    return results;
 
-    // Create project teams
-    const teams = await ProjectTeamModel.create([
-      {
-        name: 'Team Innovate',
-        members: 3,
-        department: departments[0]._id,
-        eventId: event._id,
-        isActive: true
-      },
-      {
-        name: 'EcoSolutions',
-        members: 4,
-        department: departments[1]._id,
-        eventId: event._id,
-        isActive: true
-      }
-    ]);
-
-    console.log('Seed data created successfully');
-    return {
-      departments,
-      users,
-      event,
-      teams
-    };
   } catch (error) {
-    console.error('Error seeding data:', error);
+    console.error('Error seeding departments:', error);
     throw error;
   }
 };
+
+// Run seed if this file is run directly
+if (require.main === module) {
+  connectDB()
+    .then(() => seedDepartments())
+    .then(() => {
+      console.log('Seeding completed');
+      process.exit(0);
+    })
+    .catch(error => {
+      console.error(error);
+      process.exit(1);
+    });
+}
