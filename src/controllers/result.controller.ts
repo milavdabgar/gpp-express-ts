@@ -179,7 +179,6 @@ const processGtuResultCsv = (rows: any[]) => {
       declarationDate: new Date(row.DECLARATIONDATE || Date.now()),
       academicYear: row.AcademicYear,
       semester: parseInt(row.sem) || 0,
-      mapNumber: parseFloat(row.MAP_NUMBER) || 0,
       unitNo: parseFloat(row.UNIT_NO) || 0,
       examNumber: parseFloat(row.EXAMNUMBER) || 0,
       name: row.name,

@@ -219,11 +219,6 @@ const StudentSchema = new Schema({
     type: Boolean,
     default: false
   },
-  mapNumber: {
-    type: String,
-    trim: true,
-    sparse: true
-  },
   shift: {
     type: Number,
     enum: [1, 2],

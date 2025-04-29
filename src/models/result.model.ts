@@ -8,7 +8,6 @@ export interface IResult extends Document {
   declarationDate: Date;
   academicYear: string;
   semester: number;
-  mapNumber: number;
   unitNo: number;
   examNumber: number;
   name: string;
@@ -61,9 +60,6 @@ const resultSchema = new Schema({
   semester: {
     type: Number,
     required: true
-  },
-  mapNumber: {
-    type: Number
   },
   unitNo: {
     type: Number
