@@ -177,8 +177,14 @@ const StudentSchema = new Schema({
   }],
   gender: {
     type: String,
-    enum: ['M', 'F', 'O'],
-    trim: true
+    enum: {
+      values: ['M', 'F', 'O', 'NB', 'P'],
+      message: 'Gender must be one of: M (Male), F (Female), O (Other), NB (Non-Binary), P (Prefer not to say)'
+    },
+    trim: true,
+    set: function(value: string) {
+      return value ? value.toUpperCase() : value;
+    }
   },
   category: {
     type: String,

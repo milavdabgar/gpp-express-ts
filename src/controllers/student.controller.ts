@@ -485,6 +485,27 @@ function parseBooleanFromCSV(value: any): boolean {
   return false;
 }
 
+// Helper function to map gender values
+function mapGenderValue(value: string): string {
+  if (!value) return 'P'; // Default to 'Prefer not to say' if empty
+  const normalized = value.trim().toUpperCase();
+  const genderMap: { [key: string]: string } = {
+    'M': 'M',
+    'MALE': 'M',
+    'F': 'F',
+    'FEMALE': 'F',
+    'O': 'O',
+    'OTHER': 'O',
+    'NB': 'NB',
+    'NON-BINARY': 'NB',
+    'NONBINARY': 'NB',
+    'P': 'P',
+    'PREFER NOT TO SAY': 'P',
+    'PREFER NOT TO DISCLOSE': 'P'
+  };
+  return genderMap[normalized] || 'P';
+}
+
 export const importGTUStudents = catchAsync(async (req: Request & { file?: Express.Multer.File }, res: Response) => {
   try {
     if (!req.file) {
@@ -610,7 +631,7 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
                   contact: '',
                   occupation: ''
                 },
-                gender: row.Gender?.trim() || '',
+                gender: mapGenderValue(row.Gender),
                 category: row.Category?.trim() || 'OPEN',
                 aadharNo: row.aadhar?.trim() || '',
                 semesterStatus: {
