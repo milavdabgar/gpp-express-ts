@@ -641,7 +641,7 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
                 termClose: parseBooleanFromCSV(row.termClose),
                 isCancel: parseBooleanFromCSV(row.isCancel),
                 isPassAll: parseBooleanFromCSV(row.ispassall),
-                convoyYear: row.ConvoyYear ? parseInt(row.ConvoyYear) : undefined
+                convoyYear: row.convoyear ? parseInt(row.convoyear) : undefined
               }
             },
             upsert: true
