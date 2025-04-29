@@ -634,7 +634,6 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
                   sem8: 'NOT_ATTEMPTED'
                 }),
                 admissionYear,
-                admissionDate: new Date(admissionYear, 5, 15), // June 15th of admission year
                 batch: `${admissionYear}-${admissionYear + 3}`, // 3 years for diploma
                 status: 'active',
                 isComplete: parseBooleanFromCSV(row.isComplete),
