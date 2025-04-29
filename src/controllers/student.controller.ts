@@ -37,12 +37,17 @@ export const syncStudentUser = async (user: any) => {
     : 1;
   const enrollmentNo = `${currentYear}${counter.toString().padStart(4, '0')}`;
 
+  // Generate institutional email
+  const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
+
   // Create new student record
   return StudentModel.create({
     userId: user._id,
     departmentId: user.department,
     enrollmentNo,
-    batch: `${currentYear}-${currentYear + 4}`,
+    institutionalEmail,
+    admissionYear: currentYear,
+    batch: `${currentYear}-${currentYear + 3}`,
     status: 'active'
   });
 };
@@ -130,7 +135,7 @@ export const getStudent = catchAsync(async (req: Request, res: Response) => {
 
 // Create student
 export const createStudent = catchAsync(async (req: Request, res: Response) => {
-  const { name, email, password, enrollmentNo, departmentId, semester, batch, admissionDate } = req.body;
+  const { name, email, password, enrollmentNo, departmentId, semester, batch } = req.body;
 
   // Check if user with email already exists
   const existingUser = await UserModel.findOne({ email });
@@ -162,14 +167,21 @@ export const createStudent = catchAsync(async (req: Request, res: Response) => {
     throw new AppError(`A student with enrollment number ${enrollmentNo} already exists`, 400);
   }
 
+  // Generate institutional email from enrollment number
+  const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
+
+  // Get admission year from enrollment number
+  const admissionYear = getAdmissionYearFromEnrollment(enrollmentNo);
+
   // Create student
   const student = await StudentModel.create({
     userId,
     departmentId,
     enrollmentNo,
+    institutionalEmail,
     semester: parseInt(semester),
     batch,
-    admissionDate: admissionDate || new Date(),
+    admissionYear,
     status: 'active',
     guardian: req.body.guardian || {
       name: '',
@@ -183,7 +195,7 @@ export const createStudent = catchAsync(async (req: Request, res: Response) => {
       address: '',
       city: '',
       state: '',
-      pincode: ''
+      pincode: ''  
     },
     educationBackground: req.body.educationBackground || []
   });
@@ -325,7 +337,7 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
     { label: 'Batch', value: 'batch' },
     { label: 'Semester', value: 'semester' },
     { label: 'Status', value: 'status' },
-    { label: 'Admission Date', value: 'admissionDate' },
+    { label: 'Admission Year', value: 'admissionYear' },
     // Contact Info
     { label: 'Mobile', value: 'contact.mobile' },
     { label: 'Contact Email', value: 'contact.email' },
@@ -345,12 +357,9 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
   // Convert students to plain objects with proper type handling
   const studentsData = students.map(student => {
     const plainStudent = student.toObject();
-
-    // First cast to unknown then to the expected type
     const user = (plainStudent as any).userId as { name: string; email: string } | null;
     const dept = (plainStudent as any).departmentId as { name: string } | null;
 
-    // Format education background as a string
     const educationStr = plainStudent.educationBackground?.map((edu: any) => 
       `${edu.degree}|${edu.institution}|${edu.board}|${edu.percentage}|${edu.yearOfPassing}`
     ).join('; ') || '';
@@ -364,7 +373,7 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
       batch: plainStudent.batch || '',
       semester: plainStudent.semester || '',
       status: plainStudent.status || '',
-      admissionDate: plainStudent.admissionDate ? new Date(plainStudent.admissionDate).toISOString().split('T')[0] : '',
+      admissionYear: plainStudent.admissionYear || '',
       // Contact Info 
       contact: {
         mobile: plainStudent.contact?.mobile || '',
@@ -396,10 +405,13 @@ export const exportStudentsCsv = catchAsync(async (_req: Request, res: Response)
 
 // Helper function to get current semester based on semester status
 function calculateCurrentSemester(semesterStatus: any): number {
-  const semesters = [1, 2, 3, 4, 5, 6, 7, 8];
+  const isDiploma = true; // TODO: Add proper check based on course/program type
+  const maxSemester = isDiploma ? 6 : 8;
+  const semesters = Array.from({length: maxSemester}, (_, i) => i + 1);
+  
   for (const sem of semesters.reverse()) {
-    if (semesterStatus[`sem${sem}`] !== 'NOT_ATTEMPTED') {
-      return Math.min(sem + 1, 8);
+    if (semesterStatus[`sem${sem}`] === 'CLEARED' || semesterStatus[`sem${sem}`] === 'PENDING') {
+      return Math.min(sem + 1, maxSemester);
     }
   }
   return 1;
@@ -412,6 +424,65 @@ function mapSemesterStatus(value: string): 'CLEARED' | 'PENDING' | 'NOT_ATTEMPTE
   if (numValue === 2) return 'CLEARED';
   if (numValue === 1) return 'PENDING';
   return 'NOT_ATTEMPTED';
+}
+
+// Helper function to extract year from enrollment number
+function getAdmissionYearFromEnrollment(enrollmentNo: string): number {
+  if (!enrollmentNo) return new Date().getFullYear();
+  
+  // First try to get year from first 4 digits
+  let year = parseInt(enrollmentNo.substring(0, 4));
+  if (!isNaN(year) && year >= 2000 && year <= 2030) {
+    return year;
+  }
+  
+  // If that fails, try first 2 digits assuming 20xx format
+  year = parseInt('20' + enrollmentNo.substring(0, 2));
+  if (!isNaN(year) && year >= 2000 && year <= 2030) {
+    return year;
+  }
+  
+  // If all fails, return current year
+  return new Date().getFullYear();
+}
+
+function parseStudentName(fullName: string): { firstName: string; middleName: string; lastName: string } {
+  const parts = fullName.trim().split(' ').filter(p => p.length > 0);
+  
+  if (parts.length === 3) {
+    return {
+      lastName: parts[0],
+      firstName: parts[1],
+      middleName: parts[2]
+    };
+  } else if (parts.length === 2) {
+    return {
+      lastName: parts[0],
+      firstName: parts[1],
+      middleName: ''
+    };
+  } else if (parts.length === 1) {
+    return {
+      firstName: parts[0],
+      middleName: '',
+      lastName: ''
+    };
+  }
+  
+  return {
+    firstName: fullName,
+    middleName: '',
+    lastName: ''
+  };
+}
+
+function parseBooleanFromCSV(value: any): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.toLowerCase().trim();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+  }
+  return false;
 }
 
 export const importGTUStudents = catchAsync(async (req: Request & { file?: Express.Multer.File }, res: Response) => {
@@ -464,11 +535,7 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
             warnings.push({ row: index + i + 1, warning: 'Missing student name' });
           }
 
-          // Split name into parts and ensure proper formatting
-          const nameParts = fullName.split(' ').filter((part: string) => part.length > 0);
-          const firstName = nameParts[0] || '';
-          const lastName = nameParts[nameParts.length - 1] || '';
-          const middleName = nameParts.slice(1, -1).join(' ') || '';
+          const { firstName, middleName, lastName } = parseStudentName(fullName);
 
           // Generate institutional email
           const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
@@ -514,6 +581,9 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
           };
           userOps.push(userUpdate);
 
+          // Get admission year from enrollment number using helper function
+          const admissionYear = getAdmissionYearFromEnrollment(enrollmentNo);
+
           // Prepare student data
           const studentData = {
             filter: { enrollmentNo },
@@ -534,6 +604,12 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
                   state: '',
                   pincode: ''
                 },
+                guardian: {
+                  name: '',
+                  relation: '',
+                  contact: '',
+                  occupation: ''
+                },
                 gender: row.Gender?.trim() || '',
                 category: row.Category?.trim() || 'OPEN',
                 aadharNo: row.aadhar?.trim() || '',
@@ -544,8 +620,8 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
                   sem4: mapSemesterStatus(row.SEM4),
                   sem5: mapSemesterStatus(row.SEM5),
                   sem6: mapSemesterStatus(row.SEM6),
-                  sem7: mapSemesterStatus(row.SEM7),
-                  sem8: mapSemesterStatus(row.SEM8)
+                  sem7: 'NOT_ATTEMPTED',
+                  sem8: 'NOT_ATTEMPTED'
                 },
                 semester: calculateCurrentSemester({
                   sem1: mapSemesterStatus(row.SEM1),
@@ -554,11 +630,18 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
                   sem4: mapSemesterStatus(row.SEM4),
                   sem5: mapSemesterStatus(row.SEM5),
                   sem6: mapSemesterStatus(row.SEM6),
-                  sem7: mapSemesterStatus(row.SEM7),
-                  sem8: mapSemesterStatus(row.SEM8)
+                  sem7: 'NOT_ATTEMPTED',
+                  sem8: 'NOT_ATTEMPTED'
                 }),
-                batch: `${parseInt('20' + enrollmentNo.substring(0, 2))}-${parseInt('20' + enrollmentNo.substring(0, 2)) + 4}`,
-                status: 'active'
+                admissionYear,
+                admissionDate: new Date(admissionYear, 5, 15), // June 15th of admission year
+                batch: `${admissionYear}-${admissionYear + 3}`, // 3 years for diploma
+                status: 'active',
+                isComplete: parseBooleanFromCSV(row.isComplete),
+                termClose: parseBooleanFromCSV(row.termClose),
+                isCancel: parseBooleanFromCSV(row.isCancel),
+                isPassAll: parseBooleanFromCSV(row.ispassall),
+                convoyYear: row.ConvoyYear ? parseInt(row.ConvoyYear) : undefined
               }
             },
             upsert: true

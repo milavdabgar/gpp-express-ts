@@ -35,15 +35,7 @@ const StudentSchema = new Schema({
   firstName: { type: String },
   middleName: { type: String },
   lastName: { type: String },
-  fullName: { 
-    type: String,
-    default: function(this: any) {
-      const parts = [this.firstName, this.middleName, this.lastName]
-        .filter(part => part)
-        .join(' ');
-      return parts || (this.userId && this.userId.name) || '';
-    }
-  },
+  fullName: { type: String },
   enrollmentNo: {
     type: String,
     required: true,
@@ -111,10 +103,6 @@ const StudentSchema = new Schema({
       enum: ['CLEARED', 'PENDING', 'NOT_ATTEMPTED'],
       default: 'NOT_ATTEMPTED'
     }
-  },
-  admissionDate: {
-    type: Date,
-    default: Date.now
   },
   status: {
     type: String,
@@ -201,27 +189,44 @@ const StudentSchema = new Schema({
     type: String,
     trim: true,
     sparse: true
+  },
+  admissionYear: {
+    type: Number,
+    required: true
+  },
+  convoyYear: {
+    type: Number
+  },
+  isComplete: {
+    type: Boolean,
+    default: false
+  },
+  termClose: {
+    type: Boolean,
+    default: false
+  },
+  isCancel: {
+    type: Boolean,
+    default: false
+  },
+  isPassAll: {
+    type: Boolean,
+    default: false
+  },
+  mapNumber: {
+    type: String,
+    trim: true,
+    sparse: true
+  },
+  shift: {
+    type: Number,
+    enum: [1, 2],
+    default: 1
   }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
-});
-
-// Pre-save hook to sync user name with student full name
-StudentSchema.pre('save', async function(next) {
-  if (this.isModified('firstName') || this.isModified('middleName') || this.isModified('lastName')) {
-    this.fullName = [this.firstName, this.middleName, this.lastName]
-      .filter(part => part)
-      .join(' ');
-    
-    // Update the associated user's name
-    if (this.userId) {
-      const UserModel = mongoose.model('User');
-      await UserModel.findByIdAndUpdate(this.userId, { name: this.fullName });
-    }
-  }
-  next();
 });
 
 export const StudentModel = mongoose.model('Student', StudentSchema);
