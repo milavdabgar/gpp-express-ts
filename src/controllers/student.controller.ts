@@ -420,18 +420,19 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
       throw new AppError('Please upload a CSV file', 400);
     }
 
-    const results: any[] = [];
     const stream = Readable.from(req.file.buffer.toString());
     
-    await new Promise<void>((resolve, reject) => {
+    // Parse CSV first
+    const rows = await new Promise<any[]>((resolve, reject) => {
+      const results: any[] = [];
       stream
         .pipe(csv())
         .on('data', (data) => results.push(data))
-        .on('end', () => resolve())
+        .on('end', () => resolve(results))
         .on('error', (error) => reject(new Error(`Error parsing CSV: ${error.message}`)));
     });
 
-    if (results.length === 0) {
+    if (rows.length === 0) {
       throw new AppError('CSV file is empty or malformed', 400);
     }
 
@@ -439,124 +440,178 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
     const errors: { row: number; error: string }[] = [];
     const warnings: { row: number; warning: string }[] = [];
 
-    for (const [index, row] of results.entries()) {
-      try {
-        const enrollmentNo = row.map_number?.toString().trim();
-        if (!enrollmentNo) {
-          errors.push({ row: index + 1, error: 'Missing enrollment number' });
-          continue;
-        }
+    // Group operations by department to minimize DB lookups
+    const departmentCache = new Map();
 
-        // Handle the name properly
-        const fullName = row.Name?.trim() || '';
-        if (!fullName) {
-          warnings.push({ row: index + 1, warning: 'Missing student name' });
-        }
+    // Batch process rows
+    const batchSize = 50;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const userOps = [];
+      const studentOps = [];
 
-        // Split name into parts and ensure proper formatting
-        const nameParts = fullName.split(' ').filter((part: string) => part.length > 0);
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts[nameParts.length - 1] || '';
-        const middleName = nameParts.slice(1, -1).join(' ') || '';
-
-        // Generate institutional email
-        const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
-        const personalEmail = row.Email?.trim() || '';
-
-        const branchCode = row.BR_CODE?.toString().padStart(2, '0');
-        if (!branchCode) {
-          errors.push({ row: index + 1, error: 'Missing branch code' });
-          continue;
-        }
-
-        const department = await DepartmentModel.findOne({ code: branchCode });
-        if (!department) {
-          warnings.push({ row: index + 1, warning: `Department not found for branch code: ${branchCode}` });
-          continue;
-        }
-
-        // Ensure user record has the proper name
-        let userId = null;
-        let existingUser = await UserModel.findOne({ email: institutionalEmail });
-        
-        if (existingUser) {
-          // Update existing user's name if it was N/A
-          if (existingUser.name === 'N/A' && fullName) {
-            await UserModel.findByIdAndUpdate(userId, { name: fullName });
+      for (const [index, row] of batch.entries()) {
+        try {
+          const enrollmentNo = row.map_number?.toString().trim();
+          if (!enrollmentNo) {
+            errors.push({ row: index + i + 1, error: 'Missing enrollment number' });
+            continue;
           }
-          if (!existingUser.roles.includes('student')) {
-            existingUser.roles.push('student');
-            await existingUser.save();
+
+          // Handle the name properly
+          const fullName = row.Name?.trim() || '';
+          if (!fullName) {
+            warnings.push({ row: index + i + 1, warning: 'Missing student name' });
           }
-          userId = existingUser._id;
-        } else {
-          // Create new user with proper name
-          const user = await UserModel.create({
-            name: fullName || 'N/A',  // Only use N/A if name is completely empty
-            email: institutionalEmail,
-            password: enrollmentNo,
-            department: department._id,
-            roles: ['student'],
-            selectedRole: 'student'
+
+          // Split name into parts and ensure proper formatting
+          const nameParts = fullName.split(' ').filter((part: string) => part.length > 0);
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts[nameParts.length - 1] || '';
+          const middleName = nameParts.slice(1, -1).join(' ') || '';
+
+          // Generate institutional email
+          const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
+          const personalEmail = row.Email?.trim() || '';
+
+          const branchCode = row.BR_CODE?.toString().padStart(2, '0');
+          if (!branchCode) {
+            errors.push({ row: index + i + 1, error: 'Missing branch code' });
+            continue;
+          }
+
+          // Use cached department or fetch and cache it
+          let department = departmentCache.get(branchCode);
+          if (!department) {
+            department = await DepartmentModel.findOne({ code: branchCode });
+            if (department) {
+              departmentCache.set(branchCode, department);
+            }
+          }
+
+          if (!department) {
+            warnings.push({ row: index + i + 1, warning: `Department not found for branch code: ${branchCode}` });
+            continue;
+          }
+
+          // Create or update user operations
+          const userUpdate = {
+            filter: { email: institutionalEmail },
+            update: {
+              $set: {
+                name: fullName || 'N/A',
+                email: institutionalEmail,
+                department: department._id,
+              },
+              $setOnInsert: {
+                password: enrollmentNo,
+              },
+              $addToSet: {
+                roles: 'student'
+              }
+            },
+            upsert: true
+          };
+          userOps.push(userUpdate);
+
+          // Prepare student data
+          const studentData = {
+            filter: { enrollmentNo },
+            update: {
+              $set: {
+                firstName,
+                middleName,
+                lastName,
+                fullName,
+                personalEmail,
+                institutionalEmail,
+                departmentId: department._id,
+                contact: {
+                  mobile: row.Mobile?.trim() || '',
+                  email: personalEmail || institutionalEmail,
+                  address: '',
+                  city: '',
+                  state: '',
+                  pincode: ''
+                },
+                gender: row.Gender?.trim() || '',
+                category: row.Category?.trim() || 'OPEN',
+                aadharNo: row.aadhar?.trim() || '',
+                semesterStatus: {
+                  sem1: mapSemesterStatus(row.SEM1),
+                  sem2: mapSemesterStatus(row.SEM2),
+                  sem3: mapSemesterStatus(row.SEM3),
+                  sem4: mapSemesterStatus(row.SEM4),
+                  sem5: mapSemesterStatus(row.SEM5),
+                  sem6: mapSemesterStatus(row.SEM6),
+                  sem7: mapSemesterStatus(row.SEM7),
+                  sem8: mapSemesterStatus(row.SEM8)
+                },
+                semester: calculateCurrentSemester({
+                  sem1: mapSemesterStatus(row.SEM1),
+                  sem2: mapSemesterStatus(row.SEM2),
+                  sem3: mapSemesterStatus(row.SEM3),
+                  sem4: mapSemesterStatus(row.SEM4),
+                  sem5: mapSemesterStatus(row.SEM5),
+                  sem6: mapSemesterStatus(row.SEM6),
+                  sem7: mapSemesterStatus(row.SEM7),
+                  sem8: mapSemesterStatus(row.SEM8)
+                }),
+                batch: `${parseInt('20' + enrollmentNo.substring(0, 2))}-${parseInt('20' + enrollmentNo.substring(0, 2)) + 4}`,
+                status: 'active'
+              }
+            },
+            upsert: true
+          };
+          studentOps.push(studentData);
+        } catch (error) {
+          errors.push({ 
+            row: index + i + 1, 
+            error: `Failed to process student: ${(error as Error).message}`
           });
-          userId = user._id;
         }
+      }
 
-        // Process and store the student
-        const student = await StudentModel.findOneAndUpdate(
-          { enrollmentNo },
-          {
-            userId,
-            enrollmentNo,
-            firstName,
-            middleName,
-            lastName,
-            fullName,
-            personalEmail,
-            institutionalEmail,
-            departmentId: department._id,
-            contact: {
-              mobile: row.Mobile?.trim() || '',
-              email: personalEmail || institutionalEmail,
-              address: '',
-              city: '',
-              state: '',
-              pincode: ''
-            },
-            gender: row.Gender?.trim() || '',
-            category: row.Category?.trim() || 'OPEN',
-            aadharNo: row.aadhar?.trim() || '',
-            semesterStatus: {
-              sem1: mapSemesterStatus(row.SEM1),
-              sem2: mapSemesterStatus(row.SEM2),
-              sem3: mapSemesterStatus(row.SEM3),
-              sem4: mapSemesterStatus(row.SEM4),
-              sem5: mapSemesterStatus(row.SEM5),
-              sem6: mapSemesterStatus(row.SEM6),
-              sem7: mapSemesterStatus(row.SEM7),
-              sem8: mapSemesterStatus(row.SEM8)
-            },
-            semester: calculateCurrentSemester({
-              sem1: mapSemesterStatus(row.SEM1),
-              sem2: mapSemesterStatus(row.SEM2),
-              sem3: mapSemesterStatus(row.SEM3),
-              sem4: mapSemesterStatus(row.SEM4),
-              sem5: mapSemesterStatus(row.SEM5),
-              sem6: mapSemesterStatus(row.SEM6),
-              sem7: mapSemesterStatus(row.SEM7),
-              sem8: mapSemesterStatus(row.SEM8)
-            }),
-            batch: `${parseInt('20' + enrollmentNo.substring(0, 2))}-${parseInt('20' + enrollmentNo.substring(0, 2)) + 4}`,
-            status: 'active'
-          },
-          { upsert: true, new: true }
+      // Execute batch operations
+      try {
+        // Execute user operations
+        const userResults = await Promise.all(
+          userOps.map(op => 
+            UserModel.findOneAndUpdate(op.filter, op.update, { 
+              upsert: true, 
+              new: true,
+              setDefaultsOnInsert: true
+            })
+          )
         );
 
-        processedStudents.push(student);
+        // Map user IDs to their emails for student updates
+        const userIdMap = new Map(
+          userResults.map(user => [user.email, user._id])
+        );
+
+        // Update student operations with user IDs
+        const studentResults = await Promise.all(
+          studentOps.map(op => {
+            const userEmail = (op.update.$set as any).institutionalEmail;
+            const userId = userIdMap.get(userEmail);
+            if (userId) {
+              (op.update.$set as any).userId = userId;
+            }
+            return StudentModel.findOneAndUpdate(op.filter, op.update, {
+              upsert: true,
+              new: true,
+              setDefaultsOnInsert: true
+            });
+          })
+        );
+
+        processedStudents.push(...studentResults);
       } catch (error) {
-        errors.push({ 
-          row: index + 1, 
-          error: `Failed to process student: ${(error as Error).message}`
+        console.error('Batch operation error:', error);
+        errors.push({
+          row: i + 1,
+          error: `Batch operation failed: ${(error as Error).message}`
         });
       }
     }

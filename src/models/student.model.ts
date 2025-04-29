@@ -35,7 +35,15 @@ const StudentSchema = new Schema({
   firstName: { type: String },
   middleName: { type: String },
   lastName: { type: String },
-  fullName: { type: String },
+  fullName: { 
+    type: String,
+    default: function(this: any) {
+      const parts = [this.firstName, this.middleName, this.lastName]
+        .filter(part => part)
+        .join(' ');
+      return parts || (this.userId && this.userId.name) || '';
+    }
+  },
   enrollmentNo: {
     type: String,
     required: true,
@@ -198,6 +206,22 @@ const StudentSchema = new Schema({
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
+});
+
+// Pre-save hook to sync user name with student full name
+StudentSchema.pre('save', async function(next) {
+  if (this.isModified('firstName') || this.isModified('middleName') || this.isModified('lastName')) {
+    this.fullName = [this.firstName, this.middleName, this.lastName]
+      .filter(part => part)
+      .join(' ');
+    
+    // Update the associated user's name
+    if (this.userId) {
+      const UserModel = mongoose.model('User');
+      await UserModel.findByIdAndUpdate(this.userId, { name: this.fullName });
+    }
+  }
+  next();
 });
 
 export const StudentModel = mongoose.model('Student', StudentSchema);
