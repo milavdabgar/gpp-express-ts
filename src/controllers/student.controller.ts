@@ -38,7 +38,7 @@ export const syncStudentUser = async (user: any) => {
   const enrollmentNo = `${currentYear}${counter.toString().padStart(4, '0')}`;
 
   // Generate institutional email
-  const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
+  const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.in`;
 
   // Create new student record
   return StudentModel.create({
@@ -168,7 +168,7 @@ export const createStudent = catchAsync(async (req: Request, res: Response) => {
   }
 
   // Generate institutional email from enrollment number
-  const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
+  const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.in`;
 
   // Get admission year from enrollment number
   const admissionYear = getAdmissionYearFromEnrollment(enrollmentNo);
@@ -538,7 +538,7 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
           const { firstName, middleName, lastName } = parseStudentName(fullName);
 
           // Generate institutional email
-          const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.ac.in`;
+          const institutionalEmail = `${enrollmentNo.toLowerCase()}@gppalanpur.in`;
           const personalEmail = row.Email?.trim() || '';
 
           const branchCode = row.BR_CODE?.toString().padStart(2, '0');
@@ -640,7 +640,7 @@ export const importGTUStudents = catchAsync(async (req: Request & { file?: Expre
                 termClose: parseBooleanFromCSV(row.termClose),
                 isCancel: parseBooleanFromCSV(row.isCancel),
                 isPassAll: parseBooleanFromCSV(row.ispassall),
-                convoyYear: row.convoyear ? parseInt(row.convoyear) : undefined
+                convoYear: row.convoyear ? parseInt(row.convoyear) : undefined
               }
             },
             upsert: true

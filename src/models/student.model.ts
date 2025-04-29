@@ -194,7 +194,7 @@ const StudentSchema = new Schema({
     type: Number,
     required: true
   },
-  convoyYear: {
+  convoYear: {
     type: Number
   },
   isComplete: {
