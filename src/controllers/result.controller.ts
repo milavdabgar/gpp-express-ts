@@ -70,11 +70,11 @@ export const getResult = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-// Get results by student ID
+// Get results by student enrollment number
 export const getStudentResults = catchAsync(async (req: Request, res: Response) => {
-  const { studentId } = req.params;
+  const { enrollmentNo } = req.params;
   
-  const results = await ResultModel.find({ st_id: studentId })
+  const results = await ResultModel.find({ enrollmentNo })
     .sort({ semester: 1, examid: 1 });
   
   res.status(200).json({
@@ -143,23 +143,38 @@ export const deleteResultsByBatch = catchAsync(async (req: Request, res: Respons
   });
 });
 
+// Helper to extract enrollment number - use MAP_NUMBER if available, otherwise extract from St_Id
+const extractEnrollmentNo = (row: any): string => {
+  // Prioritize MAP_NUMBER as it's more meaningful, fall back to St_Id if not available
+  return row.MAP_NUMBER || row.St_Id || '';
+};
+
+// Helper to extract St_Id - ensure we always have a value for this field
+const extractStId = (row: any): string => {
+  // Use St_Id if available, otherwise use MAP_NUMBER
+  return row.St_Id || row.MAP_NUMBER || '';
+};
+
 // Process GTU result CSV format
 const processGtuResultCsv = (rows: any[]) => {
   return rows.map(row => {
-    // Extract subjects
     const subjects = [];
     
-    // Process up to 15 subjects (based on sample CSV structure)
-    for (let i = 1; i <= 15; i++) {
+    // Find subject columns by checking for SUB pattern
+    const subjectColumns = Object.keys(row).filter(key => key.match(/^SUB\d+$/));
+    const maxSubjects = subjectColumns.length;
+
+    // Process subjects dynamically based on available columns
+    for (let i = 1; i <= maxSubjects; i++) {
       const subCode = row[`SUB${i}`];
       const subName = row[`SUB${i}NA`];
       
       // Skip empty subjects
       if (!subCode || !subName) continue;
       
-      const credits = parseInt(row[`SUB${i}CR`]) || 0;
+      const credits = parseFloat(row[`SUB${i}CR`]) || 0;
       const grade = row[`SUB${i}GR`] || '';
-      const isBacklog = row[`BCK${i}`] === 1;
+      const isBacklog = row[`BCK${i}`] === '1' || row[`BCK${i}`] === 1;
       
       subjects.push({
         code: subCode,
@@ -170,9 +185,14 @@ const processGtuResultCsv = (rows: any[]) => {
       });
     }
 
+    // Get enrollment number and st_id using the helper functions
+    const enrollmentNo = extractEnrollmentNo(row);
+    const st_id = extractStId(row);
+
     // Create formatted result object
     return {
-      st_id: row.St_Id,
+      st_id,
+      enrollmentNo,  // Use the extracted enrollment number
       extype: row.extype,
       examid: parseInt(row.examid) || 0,
       exam: row.exam,
@@ -188,8 +208,8 @@ const processGtuResultCsv = (rows: any[]) => {
       branchCode: parseInt(row.BR_CODE) || 0,
       branchName: row.BR_NAME,
       subjects,
-      totalCredits: parseInt(row.SPI_TOTCR) || 0,
-      earnedCredits: parseInt(row.SPI_ERTOTCR) || 0,
+      totalCredits: parseFloat(row.SPI_TOTCR) || 0,
+      earnedCredits: parseFloat(row.SPI_ERTOTCR) || 0,
       spi: parseFloat(row.SPI) || 0,
       cpi: parseFloat(row.CPI) || 0,
       cgpa: parseFloat(row.CGPA) || 0,
@@ -201,7 +221,7 @@ const processGtuResultCsv = (rows: any[]) => {
 };
 
 // Import results from CSV
-export const importResults = catchAsync(async (req: Request, res: Response) => {
+export const importResults = catchAsync(async (req: Request, res: Response): Promise<any> => {
   if (!req.file) {
     throw new AppError('Please upload a CSV file', 400);
   }
@@ -219,11 +239,32 @@ export const importResults = catchAsync(async (req: Request, res: Response) => {
         .on('error', (error) => reject(error));
     });
 
+    if (results.length === 0) {
+      throw new AppError('CSV file is empty', 400);
+    }
+
+    // Validate required columns exist
+    const firstRow = results[0];
+    const requiredColumns = ['extype', 'examid', 'sem', 'name', 'BR_NAME'];
+    // Add flexible ID column validation - can be either St_Id or MAP_NUMBER
+    if (!('St_Id' in firstRow) && !('MAP_NUMBER' in firstRow)) {
+      throw new AppError('Missing required column: Student ID (St_Id or MAP_NUMBER)', 400);
+    }
+    const missingColumns = requiredColumns.filter(col => !(col in firstRow));
+    
+    if (missingColumns.length > 0) {
+      throw new AppError(`Missing required columns: ${missingColumns.join(', ')}`, 400);
+    }
+
     // Generate a unique batch ID for this upload
     const batchId = uuidv4();
     
     // Process the CSV data
     const processedResults = processGtuResultCsv(results);
+
+    if (processedResults.length === 0) {
+      throw new AppError('No valid results found after processing', 400);
+    }
 
     // Add batch ID to each result
     const resultsWithBatch = processedResults.map(result => ({
@@ -231,34 +272,103 @@ export const importResults = catchAsync(async (req: Request, res: Response) => {
       uploadBatch: batchId
     }));
 
-    // Save to database
-    const savedResults = await ResultModel.insertMany(resultsWithBatch, {
-      ordered: false // Continue inserting even if some fail (due to duplicates)
-    }).then(docs => ({
-      insertedCount: docs.length,
-      error: undefined
-    })).catch((error: any) => {
-      // Check if it's a duplicate key error
-      if (error.code === 11000) {
-        return {
-          insertedCount: error.result?.insertedCount || 0,
-          error: 'Some results were not imported due to duplicates'
-        };
-      }
-      throw error;
+    // Debug: Log the first result to see what's being processed
+    console.log('Sample processed result:', {
+      st_id: resultsWithBatch[0].st_id,
+      enrollmentNo: resultsWithBatch[0].enrollmentNo,
+      examid: resultsWithBatch[0].examid
     });
 
-    res.status(201).json({
-      status: 'success',
-      data: {
-        batchId,
-        importedCount: savedResults.insertedCount || processedResults.length,
-        totalRows: results.length
+    // Check for existing results before attempting to insert
+    // This helps provide better error messages
+    const existingResults = await Promise.all(
+      resultsWithBatch.slice(0, 5).map(async (result) => {
+        const existing = await ResultModel.findOne({
+          enrollmentNo: result.enrollmentNo,
+          examid: result.examid
+        });
+        return existing ? result.enrollmentNo : null;
+      })
+    );
+
+    const duplicateEnrollmentNos = existingResults.filter(Boolean);
+    
+    if (duplicateEnrollmentNos.length > 0) {
+      // If we found duplicates in our sample check, provide a clear message
+      return res.status(200).json({
+        status: 'warning',
+        data: {
+          batchId: null,
+          importedCount: 0,
+          totalRows: results.length,
+          error: `These results appear to have already been uploaded previously. Found duplicate enrollment numbers: ${duplicateEnrollmentNos.slice(0, 3).join(', ')}${duplicateEnrollmentNos.length > 3 ? '...' : ''}`
+        }
+      });
+    }
+
+    // Save to database
+    try {
+      const savedResults = await ResultModel.insertMany(resultsWithBatch, {
+        ordered: false // Continue inserting even if some fail
+      });
+
+      res.status(201).json({
+        status: 'success',
+        data: {
+          batchId,
+          importedCount: savedResults.length,
+          totalRows: results.length
+        }
+      });
+      return;
+
+    } catch (error: any) {
+      console.error('Import error:', error);
+      
+      // Extract duplicate key information for better error messages
+      let duplicateInfo = '';
+      if (error.code === 11000 && error.writeErrors) {
+        // Get the first few duplicate keys to show in the error message
+        const duplicates = error.writeErrors
+          .filter((e: any) => e.code === 11000)
+          .slice(0, 3)
+          .map((e: any) => {
+            const keyValue = e.err?.keyValue || e.keyValue || {};
+            return keyValue.enrollmentNo || 'unknown';
+          });
+          
+        if (duplicates.length > 0) {
+          duplicateInfo = ` Found duplicate enrollment numbers: ${duplicates.join(', ')}${error.writeErrors.length > 3 ? '...' : ''}`;
+        }
       }
-    });
-  } catch (error) {
+      
+      // Check if this is actually a duplicate key error
+      if (error.code === 11000) {
+        const insertedCount = error.result?.nInserted || 0;
+        
+        res.status(200).json({
+          status: 'partial',
+          data: {
+            batchId: insertedCount > 0 ? batchId : null,
+            importedCount: insertedCount,
+            totalRows: results.length,
+            error: `Some or all results were not imported due to duplicates.${duplicateInfo}`
+          }
+        });
+        return;
+      }
+
+      // For other database errors
+      throw new AppError(error.message || 'Error saving results to database', 400);
+    }
+
+  } catch (error: any) {
+    // Handle CSV processing errors
     throw new AppError(`Error processing CSV: ${error.message}`, 400);
   }
+  
+  // This return is to satisfy TypeScript - the function will either return earlier or throw an error
+  return;
 });
 
 // Export results to CSV

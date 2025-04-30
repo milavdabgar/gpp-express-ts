@@ -1,50 +1,38 @@
-import express from 'express';
+import { Router } from 'express';
+import * as resultController from '../controllers/result.controller';
 import multer from 'multer';
-import {
-  getAllResults,
-  getResult,
-  getStudentResults,
-  getUploadBatches,
-  deleteResult,
-  deleteResultsByBatch,
-  importResults,
-  exportResults,
-  getBranchAnalysis
-} from '../controllers/result.controller';
-import { protect, restrictTo } from '../middleware/auth.middleware';
+import { protect } from '../middleware/auth.middleware';
 
-const router = express.Router();
-
-// Configure multer for CSV upload
+const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Protect all routes
 router.use(protect);
 
-// Routes for admin
 router.route('/')
-  .get(restrictTo('admin', 'principal', 'hod'), getAllResults);
-
-router.route('/batches')
-  .get(restrictTo('admin'), getUploadBatches);
-
-router.route('/export')
-  .get(restrictTo('admin', 'principal', 'hod'), exportResults);
+  .get(resultController.getAllResults);
 
 router.route('/import')
-  .post(restrictTo('admin'), upload.single('file'), importResults);
+  .post(upload.single('file'), resultController.importResults);
 
-router.route('/analysis/branch')
-  .get(restrictTo('admin', 'principal', 'hod', 'faculty'), getBranchAnalysis);
+router.route('/export')
+  .get(resultController.exportResults);
 
-router.route('/student/:studentId')
-  .get(restrictTo('admin', 'principal', 'hod', 'faculty', 'student'), getStudentResults);
+router.route('/analysis')
+  .get(resultController.getBranchAnalysis);
 
-router.route('/:id')
-  .get(restrictTo('admin', 'principal', 'hod', 'faculty'), getResult)
-  .delete(restrictTo('admin'), deleteResult);
+router.route('/batches')
+  .get(resultController.getUploadBatches);
 
 router.route('/batch/:batchId')
-  .delete(restrictTo('admin'), deleteResultsByBatch);
+  .delete(resultController.deleteResultsByBatch);
+
+// Update this route to use enrollmentNo
+router.route('/student/:enrollmentNo')
+  .get(resultController.getStudentResults);
+
+router.route('/:id')
+  .get(resultController.getResult)
+  .delete(resultController.deleteResult);
 
 export default router;

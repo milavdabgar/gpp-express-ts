@@ -2,6 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IResult extends Document {
   st_id: string;
+  enrollmentNo: string; // Add enrollmentNo field
   extype: string;
   examid: number;
   exam: string;
@@ -39,8 +40,12 @@ export interface IResult extends Document {
 const resultSchema = new Schema({
   st_id: {
     type: String,
+    required: true
+  },
+  enrollmentNo: {
+    type: String,
     required: true,
-    index: true
+    index: true // Add index for better query performance
   },
   extype: {
     type: String
@@ -140,8 +145,9 @@ const resultSchema = new Schema({
   timestamps: true
 });
 
-// Create compound index on student ID and exam ID to ensure uniqueness
-resultSchema.index({ st_id: 1, examid: 1 }, { unique: true });
+// Create compound index on enrollment number and exam ID to ensure uniqueness
+// Using enrollmentNo instead of st_id as it's more meaningful and consistent
+resultSchema.index({ enrollmentNo: 1, examid: 1 }, { unique: true });
 
 // Create indexes for common query patterns
 resultSchema.index({ branchName: 1, semester: 1 });
