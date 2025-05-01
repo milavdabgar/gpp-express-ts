@@ -23,6 +23,12 @@ export interface IResult extends Document {
     credits: number;
     grade: string;
     isBacklog: boolean;
+    theoryEseGrade?: string;
+    theoryPaGrade?: string;
+    theoryTotalGrade?: string;
+    practicalEseGrade?: string;
+    practicalPaGrade?: string;
+    practicalTotalGrade?: string;
   }>;
   totalCredits: number;
   earnedCredits: number;
@@ -111,7 +117,13 @@ const resultSchema = new Schema({
     isBacklog: {
       type: Boolean,
       default: false
-    }
+    },
+    theoryEseGrade: String,
+    theoryPaGrade: String,
+    theoryTotalGrade: String,
+    practicalEseGrade: String,
+    practicalPaGrade: String,
+    practicalTotalGrade: String
   }],
   totalCredits: {
     type: Number

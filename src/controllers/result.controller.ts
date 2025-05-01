@@ -176,12 +176,26 @@ const processGtuResultCsv = (rows: any[]) => {
       const grade = row[`SUB${i}GR`] || '';
       const isBacklog = row[`BCK${i}`] === '1' || row[`BCK${i}`] === 1;
       
+      // Extract individual grade components
+      const theoryEseGrade = row[`SUB${i}GRE`] || '';
+      const theoryPaGrade = row[`SUB${i}GRI`] || '';
+      const theoryTotalGrade = row[`SUB${i}GRTH`] || '';
+      const practicalEseGrade = row[`SUB${i}GRPR`] || '';
+      const practicalPaGrade = row[`SUB${i}GRM`] || '';
+      const practicalTotalGrade = row[`SUB${i}GRV`] || '';
+      
       subjects.push({
         code: subCode,
         name: subName,
         credits,
         grade,
-        isBacklog
+        isBacklog,
+        theoryEseGrade,
+        theoryPaGrade,
+        theoryTotalGrade,
+        practicalEseGrade,
+        practicalPaGrade,
+        practicalTotalGrade
       });
     }
 
@@ -215,7 +229,9 @@ const processGtuResultCsv = (rows: any[]) => {
       cgpa: parseFloat(row.CGPA) || 0,
       result: row.RESULT,
       trials: parseInt(row.TRIAL) || 1,
-      remark: row.REMARK
+      remark: row.REMARK,
+      currentBacklog: parseInt(row.CURR_BCK) || 0,
+      totalBacklog: parseInt(row.TOT_BCK) || 0
     };
   });
 };
