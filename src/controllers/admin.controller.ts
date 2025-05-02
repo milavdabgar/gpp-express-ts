@@ -40,12 +40,33 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
 
 export const getAllUsers = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 100;
+    const skip = (page - 1) * limit;
+
     const { role } = req.query;
     const query = role ? { roles: role } : {};
-    const users = await UserModel.find(query).select('-password');
+
+    const [users, total] = await Promise.all([
+      UserModel.find(query)
+        .select('-password')
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      UserModel.countDocuments(query)
+    ]);
+
     res.status(200).json({
       status: 'success',
-      data: { users }
+      data: {
+        users,
+        pagination: {
+          total,
+          totalPages: Math.ceil(total / limit),
+          currentPage: page,
+          limit
+        }
+      }
     });
   } catch (error) {
     next(error);
