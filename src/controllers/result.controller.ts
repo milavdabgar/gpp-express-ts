@@ -174,7 +174,6 @@ const processGtuResultCsv = (rows: any[]) => {
       
       const credits = parseFloat(row[`SUB${i}CR`]) || 0;
       const grade = row[`SUB${i}GR`] || '';
-      const isBacklog = row[`BCK${i}`] === '1' || row[`BCK${i}`] === 1;
       
       // Extract individual grade components
       const theoryEseGrade = row[`SUB${i}GRE`] || '';
@@ -184,6 +183,9 @@ const processGtuResultCsv = (rows: any[]) => {
       const practicalPaGrade = row[`SUB${i}GRM`] || '';
       const practicalTotalGrade = row[`SUB${i}GRV`] || '';
       
+      // Mark as backlog if grade is FF
+      const isBacklog = grade === 'FF';
+
       subjects.push({
         code: subCode,
         name: subName,
@@ -230,8 +232,8 @@ const processGtuResultCsv = (rows: any[]) => {
       result: row.RESULT,
       trials: parseInt(row.TRIAL) || 1,
       remark: row.REMARK,
-      currentBacklog: parseInt(row.CURR_BCK) || 0,
-      totalBacklog: parseInt(row.TOT_BCK) || 0
+      currentBacklog: parseInt(row.CURBACKL) || 0,
+      totalBacklog: parseInt(row.TOTBACKL) || 0
     };
   });
 };

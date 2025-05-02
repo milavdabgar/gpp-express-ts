@@ -38,6 +38,8 @@ export interface IResult extends Document {
   result: string;
   trials: number;
   remark: string;
+  currentBacklog: number;
+  totalBacklog: number;
   createdAt: Date;
   updatedAt: Date;
   uploadBatch: string; // To group uploads done in one batch
