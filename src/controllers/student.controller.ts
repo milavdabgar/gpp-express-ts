@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Parser } from 'json2csv';
+import mongoose from 'mongoose';
 import { StudentModel } from '../models/student.model';
 import { UserModel } from '../models/user.model';
 import { DepartmentModel } from '../models/department.model';
@@ -100,7 +101,7 @@ export const getAllStudents = catchAsync(async (req: Request, res: Response) => 
 
   // Department filter
   if (department && department !== 'all') {
-    query.departmentId = department;
+    query.departmentId = new mongoose.Types.ObjectId(department);
   }
 
   // Batch filter
@@ -120,8 +121,22 @@ export const getAllStudents = catchAsync(async (req: Request, res: Response) => 
 
   // Semester status filter
   if (semesterStatus && semesterStatus !== 'all') {
-    const semField = `semesterStatus.sem${semester}`;
-    query[semField] = semesterStatus;
+    if (semester && !isNaN(semester)) {
+      const semField = `semesterStatus.sem${semester}`;
+      query[semField] = semesterStatus;
+    } else {
+      // If no specific semester is selected, check all semesters
+      query.$or = [
+        { 'semesterStatus.sem1': semesterStatus },
+        { 'semesterStatus.sem2': semesterStatus },
+        { 'semesterStatus.sem3': semesterStatus },
+        { 'semesterStatus.sem4': semesterStatus },
+        { 'semesterStatus.sem5': semesterStatus },
+        { 'semesterStatus.sem6': semesterStatus },
+        { 'semesterStatus.sem7': semesterStatus },
+        { 'semesterStatus.sem8': semesterStatus }
+      ];
+    }
   }
 
   // Search
