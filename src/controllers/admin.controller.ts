@@ -43,13 +43,42 @@ export const getAllUsers = async (req: Request, res: Response, next: NextFunctio
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 100;
     const skip = (page - 1) * limit;
+    const search = req.query.search as string;
+    const role = req.query.role as string;
+    const department = req.query.department as string;
+    const sortBy = req.query.sortBy as string || 'name';
+    const sortOrder = req.query.sortOrder as 'asc' | 'desc' || 'asc';
 
-    const { role } = req.query;
-    const query = role ? { roles: role } : {};
+    // Build query
+    let query: any = {};
+
+    // Role filter
+    if (role && role !== 'all') {
+      query.roles = role;
+    }
+
+    // Department filter
+    if (department && department !== 'all') {
+      query.department = department;
+    }
+
+    // Search
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Sort configuration
+    const sortConfig: { [key: string]: 1 | -1 } = {
+      [sortBy]: sortOrder === 'desc' ? -1 : 1
+    };
 
     const [users, total] = await Promise.all([
       UserModel.find(query)
         .select('-password')
+        .sort(sortConfig)
         .skip(skip)
         .limit(limit)
         .lean(),
