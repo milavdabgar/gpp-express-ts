@@ -85,21 +85,128 @@ export const getAllStudents = catchAsync(async (req: Request, res: Response) => 
   const limit = parseInt(req.query.limit as string) || 100;
   const skip = (page - 1) * limit;
 
-  const [students, total] = await Promise.all([
-    StudentModel.find()
-      .populate({ 
-        path: 'userId',
-        select: 'name email roles'
-      })
-      .populate({
-        path: 'departmentId',
-        select: 'name'
-      })
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    StudentModel.countDocuments()
+  // Get query parameters
+  const search = req.query.search as string;
+  const department = req.query.department as string;
+  const batch = req.query.batch as string;
+  const semester = parseInt(req.query.semester as string);
+  const semesterStatus = req.query.semesterStatus as string;
+  const category = req.query.category as string;
+  const sortBy = req.query.sortBy as string || 'enrollmentNo';
+  const sortOrder = req.query.sortOrder as 'asc' | 'desc' || 'asc';
+
+  // Build query
+  let query: any = {};
+
+  // Department filter
+  if (department && department !== 'all') {
+    query.departmentId = department;
+  }
+
+  // Batch filter
+  if (batch && batch !== 'all') {
+    query.batch = batch;
+  }
+
+  // Semester filter
+  if (semester && !isNaN(semester)) {
+    query.semester = semester;
+  }
+
+  // Category filter
+  if (category && category !== 'all') {
+    query.category = category;
+  }
+
+  // Semester status filter
+  if (semesterStatus && semesterStatus !== 'all') {
+    const semField = `semesterStatus.sem${semester}`;
+    query[semField] = semesterStatus;
+  }
+
+  // Search
+  if (search) {
+    query.$or = [
+      { enrollmentNo: { $regex: search, $options: 'i' } },
+      { firstName: { $regex: search, $options: 'i' } },
+      { middleName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } },
+      { personalEmail: { $regex: search, $options: 'i' } },
+      { institutionalEmail: { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  // Sort configuration
+  const sortField = sortBy === 'userId.name' ? 'userId.name' : sortBy;
+  const sortConfig: { [key: string]: 1 | -1 } = {
+    [sortField]: sortOrder === 'desc' ? -1 : 1
+  };
+
+  // Use aggregation for proper sorting on populated fields
+  type AggregationStage = 
+    | { $match: any }
+    | { $lookup: { from: string; localField: string; foreignField: string; as: string } }
+    | { $unwind: string | { path: string; preserveNullAndEmptyArrays?: boolean } }
+    | { $addFields: Record<string, any> }
+    | { $sort: Record<string, 1 | -1> }
+    | { $skip: number }
+    | { $limit: number };
+
+  const aggregatePipeline: AggregationStage[] = [
+    { $match: query },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'userId',
+        foreignField: '_id',
+        as: 'userInfo'
+      }
+    },
+    {
+      $lookup: {
+        from: 'departments',
+        localField: 'departmentId',
+        foreignField: '_id',
+        as: 'departmentInfo'
+      }
+    },
+    { $unwind: '$userInfo' },
+    { $unwind: { path: '$departmentInfo', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        'userId': {
+          '_id': '$userInfo._id',
+          'name': '$userInfo.name',
+          'email': '$userInfo.email',
+          'roles': '$userInfo.roles'
+        },
+        'department': {
+          '_id': '$departmentInfo._id',
+          'name': '$departmentInfo.name'
+        }
+      }
+    }
+  ];
+
+  // Add sort stage
+  if (sortBy === 'userId.name') {
+    aggregatePipeline.push({ $sort: { 'userInfo.name': sortOrder === 'desc' ? -1 : 1 } } as AggregationStage);
+  } else {
+    aggregatePipeline.push({ $sort: sortConfig } as AggregationStage);
+  }
+
+  // Add pagination
+  aggregatePipeline.push(
+    { $skip: skip } as AggregationStage,
+    { $limit: limit } as AggregationStage
+  );
+
+  const [students, totalResults] = await Promise.all([
+    StudentModel.aggregate(aggregatePipeline).collation({ locale: 'en' }),
+    StudentModel.countDocuments(query)
   ]);
+
+  const total = totalResults;
 
   const totalPages = Math.ceil(total / limit);
 
