@@ -175,13 +175,13 @@ const processGtuResultCsv = (rows: any[]) => {
       const credits = parseFloat(row[`SUB${i}CR`]) || 0;
       const grade = row[`SUB${i}GR`] || '';
       
-      // Extract individual grade components
-      const theoryEseGrade = row[`SUB${i}GRE`] || '';
-      const theoryPaGrade = row[`SUB${i}GRI`] || '';
-      const theoryTotalGrade = row[`SUB${i}GRTH`] || '';
-      const practicalEseGrade = row[`SUB${i}GRPR`] || '';
-      const practicalPaGrade = row[`SUB${i}GRM`] || '';
-      const practicalTotalGrade = row[`SUB${i}GRV`] || '';
+      // Extract individual grade components based on CSV documentation
+      const theoryEseGrade = row[`SUB${i}GRE`] || '';      // Theory External (E) - 70 marks
+      const theoryPaGrade = row[`SUB${i}GRM`] || '';      // Theory Mid-term/PA (M) - 30 marks
+      const theoryTotalGrade = row[`SUB${i}GRTH`] || '';  // Theory Total (E+M = 100 marks)
+      const practicalPaGrade = row[`SUB${i}GRI`] || '';   // Practical Internal/PA (I) - 20 marks
+      const practicalVivaGrade = row[`SUB${i}GRV`] || ''; // Practical End Term Viva (V) - 30 marks
+      const practicalTotalGrade = row[`SUB${i}GRPR`] || ''; // Practical Total (I+V = 50 marks)
       
       // Mark as backlog if grade is FF
       const isBacklog = grade === 'FF';
@@ -192,12 +192,12 @@ const processGtuResultCsv = (rows: any[]) => {
         credits,
         grade,
         isBacklog,
-        theoryEseGrade,
-        theoryPaGrade,
-        theoryTotalGrade,
-        practicalEseGrade,
-        practicalPaGrade,
-        practicalTotalGrade
+        theoryEseGrade,    // External (70 marks)
+        theoryPaGrade,     // Mid-term/PA (30 marks)
+        theoryTotalGrade,  // Total theory (100 marks)
+        practicalPaGrade,  // Internal/PA (20 marks)
+        practicalVivaGrade, // End Term Viva (30 marks)
+        practicalTotalGrade // Total practical (50 marks)
       });
     }
 
@@ -263,7 +263,7 @@ export const importResults = catchAsync(async (req: Request, res: Response): Pro
 
     // Validate required columns exist
     const firstRow = results[0];
-    const requiredColumns = ['extype', 'examid', 'sem', 'name', 'BR_NAME'];
+    const requiredColumns = ['extype', 'examid', 'sem', 'name', 'BR_NAME', 'CURBACKL', 'TOTBACKL'];
     // Add flexible ID column validation - can be either St_Id or MAP_NUMBER
     if (!('St_Id' in firstRow) && !('MAP_NUMBER' in firstRow)) {
       throw new AppError('Missing required column: Student ID (St_Id or MAP_NUMBER)', 400);

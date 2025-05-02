@@ -23,12 +23,12 @@ export interface IResult extends Document {
     credits: number;
     grade: string;
     isBacklog: boolean;
-    theoryEseGrade?: string;
-    theoryPaGrade?: string;
-    theoryTotalGrade?: string;
-    practicalEseGrade?: string;
-    practicalPaGrade?: string;
-    practicalTotalGrade?: string;
+    theoryEseGrade?: string;    // External (E) - 70 marks
+    theoryPaGrade?: string;     // Mid-term/PA (M) - 30 marks
+    theoryTotalGrade?: string;  // Theory Total (E+M = 100 marks)
+    practicalPaGrade?: string;  // Internal/PA (I) - 20 marks
+    practicalVivaGrade?: string; // End Term Viva (V) - 30 marks
+    practicalTotalGrade?: string; // Practical Total (I+V = 50 marks)
   }>;
   totalCredits: number;
   earnedCredits: number;
@@ -120,12 +120,12 @@ const resultSchema = new Schema({
       type: Boolean,
       default: false
     },
-    theoryEseGrade: String,
-    theoryPaGrade: String,
-    theoryTotalGrade: String,
-    practicalEseGrade: String,
-    practicalPaGrade: String,
-    practicalTotalGrade: String
+    theoryEseGrade: String,     // External (E) - 70 marks
+    theoryPaGrade: String,      // Mid-term/PA (M) - 30 marks
+    theoryTotalGrade: String,   // Theory Total (E+M = 100 marks)
+    practicalPaGrade: String,   // Internal/PA (I) - 20 marks
+    practicalVivaGrade: String, // End Term Viva (V) - 30 marks
+    practicalTotalGrade: String // Practical Total (I+V = 50 marks)
   }],
   totalCredits: {
     type: Number
@@ -148,6 +148,14 @@ const resultSchema = new Schema({
   trials: {
     type: Number,
     default: 1
+  },
+  currentBacklog: {
+    type: Number,
+    default: 0
+  },
+  totalBacklog: {
+    type: Number,
+    default: 0
   },
   remark: {
     type: String
