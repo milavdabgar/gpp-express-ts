@@ -224,8 +224,10 @@ const processGtuResultCsv = (rows: any[]) => {
       branchCode: parseInt(row.BR_CODE) || 0,
       branchName: row.BR_NAME,
       subjects,
-      totalCredits: parseFloat(row.SPI_TOTCR) || 0,
-      earnedCredits: parseFloat(row.SPI_ERTOTCR) || 0,
+      // Calculate total credits (sum of all subject credits)
+      totalCredits: subjects.reduce((sum, sub) => sum + sub.credits, 0),
+      // Calculate earned credits (sum of credits from passed subjects)
+      earnedCredits: subjects.reduce((sum, sub) => sum + (sub.isBacklog ? 0 : sub.credits), 0),
       spi: parseFloat(row.SPI) || 0,
       cpi: parseFloat(row.CPI) || 0,
       cgpa: parseFloat(row.CGPA) || 0,
