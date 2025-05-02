@@ -126,13 +126,23 @@ export const getAllStudents = catchAsync(async (req: Request, res: Response) => 
 
   // Search
   if (search) {
+    // First, find users whose names match the search
+    const users = await UserModel.find(
+      { name: { $regex: search, $options: 'i' } },
+      { _id: 1 }
+    ).lean();
+    
+    const userIds = users.map(user => user._id);
+
+    // Then search in student fields and matching user IDs
     query.$or = [
       { enrollmentNo: { $regex: search, $options: 'i' } },
       { firstName: { $regex: search, $options: 'i' } },
       { middleName: { $regex: search, $options: 'i' } },
       { lastName: { $regex: search, $options: 'i' } },
       { personalEmail: { $regex: search, $options: 'i' } },
-      { institutionalEmail: { $regex: search, $options: 'i' } }
+      { institutionalEmail: { $regex: search, $options: 'i' } },
+      { userId: { $in: userIds } } // Include students whose users match the search
     ];
   }
 
